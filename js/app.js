@@ -22,6 +22,7 @@
     { name: '第一站 · 小芽', note: '一页一句，短短的' },
     { name: '第二站 · 花朵', note: '一页一两句' },
     { name: '第三站 · 大树', note: '一页两三句，长一点' },
+    { name: '第四站 · 果子', note: '一页一段话，最后一个故事一口气读完' },
   ];
   const MEDALS = [[10, '🥉', '铜牌'], [30, '🥈', '银牌'], [60, '🥇', '金牌'], [100, '👑', '皇冠']];
 
@@ -33,18 +34,9 @@
     });
   });
 
-  // 点图片时念的词
-  const WORDS = {
-    '🐑': '羊', '🐐': '山羊', '🐄': '牛', '🐮': '小牛', '🐃': '水牛', '🐎': '马', '🎠': '木马',
-    '🐦': '鸟', '🕊️': '白鸟', '🐟': '鱼', '🐠': '鱼', '🐛': '虫', '🐞': '小虫', '🐝': '小虫',
-    '🌼': '花', '🌷': '花', '🌸': '花', '🌻': '花', '🥀': '花', '🌽': '玉米', '🍞': '面包', '🥟': '包子',
-    '🍎': '果子', '🍉': '瓜', '🔪': '刀', '☂️': '雨伞', '🌂': '伞', '🌧️': '下雨', '⚡': '闪电',
-    '🌛': '月儿', '⭐': '星星', '🌟': '星星', '🚂': '火车', '🚃': '车', '🤴': '王子', '👑': '王',
-    '🧔': '父王', '👨': '爸爸', '👩': '妈妈', '👦': '元元', '👧': '文文', '🏰': '王', '🌬️': '风',
-    '✋': '手', '🍚': '米', '💧': '水', '💦': '水', '🔨': '工', '🌱': '小花', '🦉': '鸟', '🐸': '青蛙',
-    '#mountain': '山', '#house': '门', '#tree': '树', '#pond': '水', '#rock': '石头', '#melon': '大瓜',
-    '#melonopen': '瓜子', '#cloud': '白云', '#cloudface': '小白云', '#seeds': '瓜子', '#log': '木头', '#nest': '家',
-  };
+  // 点图片时念的词、固定的话（js/phrases.js）
+  const WORDS = window.PIC_WORDS || {};
+  const PHRASES = Object.assign({ quizAsk: '找一找', quizAgain: '再听一听', praise: ['对啦！'], rewardPrefix: '太棒了！你得到了', hello: '你好，我们来读故事。' }, window.PHRASES || {});
 
   /* ======================= 存档 ======================= */
   const KEY = 'shizi-gushiwu-v1';
@@ -64,6 +56,7 @@
   function applySettings() {
     Speech.setRate(RATES[settings.rate] || 0.8);
     Speech.setVoice(settings.voice);
+    Voice.setRate([0.85, 1, 1.15][settings.rate] || 1);
     Sfx.enabled = settings.sfx;
   }
   applySettings();
@@ -96,7 +89,7 @@
     }
     return a;
   };
-  const canTalk = () => Speech.ok && Speech.voices.length > 0;
+  const canTalk = () => Voice.ready;
 
   const I = {
     speaker: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9.2h3.8L12.4 5v14l-5.1-4.2H3.5z" fill="currentColor"/><path d="M15.6 8.6a4.8 4.8 0 0 1 0 6.8M18.3 6a8.6 8.6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
@@ -184,7 +177,7 @@
   // 点读：念一个字
   function sayChar(c) {
     if (!canTalk()) warnNoVoice();
-    Speech.speak(SAY_ALONE[c] || c, { rate: Speech.rate * 0.92 });
+    Voice.say(c);
   }
   function charTile(c, cls, idx) {
     const known = KNOWN.has(c);
@@ -343,7 +336,7 @@
     const all = hanOf(storyText(s));
     const fresh = [...new Set(hanOf(s.title + storyText(s)).filter((c) => !KNOWN.has(c)))];
     const done = isDone(i);
-    Speech.unlock();
+    Voice.unlock();
     modal('cover st-' + s.stage, [
       h('div', { class: 'cover-top' },
         h('span', { class: 'chip' }, `第 ${i + 1} 关`),
@@ -358,7 +351,7 @@
       h('div', { class: 'cover-btns' },
         h('button', { class: 'btn big', type: 'button', onclick: () => openReader(i) }, '开始读', icon(I.next))),
     ]);
-    Speech.speak(s.title);
+    Voice.say(s.title);
   }
 
   /* ======================= 读故事 ======================= */
@@ -373,7 +366,7 @@
   }
 
   function openReader(i, page) {
-    Speech.unlock();
+    Voice.unlock();
     Sfx.unlock();
     closeModal(true);
     stopQuizUI();
@@ -418,10 +411,10 @@
     const narrow = W < 700 || W / H < 0.8;
     const n = hanOf(pg.text).length;
     const pct = narrow
-      ? (n <= 6 ? 0.2 : n <= 12 ? 0.24 : n <= 20 ? 0.29 : 0.34)
-      : (n <= 6 ? 0.24 : n <= 12 ? 0.27 : n <= 20 ? 0.31 : 0.35);
+      ? (n <= 6 ? 0.2 : n <= 12 ? 0.24 : n <= 20 ? 0.29 : n <= 30 ? 0.36 : n <= 40 ? 0.42 : 0.48)
+      : (n <= 6 ? 0.24 : n <= 12 ? 0.27 : n <= 20 ? 0.31 : n <= 30 ? 0.36 : n <= 40 ? 0.41 : 0.46);
     const ctrl = narrow ? 78 : 0;
-    const cardH = Math.round(Math.min(H * 0.58, Math.max(narrow ? 210 : 160, H * pct + ctrl)) + sa.b);
+    const cardH = Math.round(Math.min(H * (narrow ? 0.64 : 0.58), Math.max(narrow ? 210 : 160, H * pct + ctrl)) + sa.b);
     const barH = 62 + sa.t;
     const artH = Math.max(120, H - barH - cardH);
     const sw = Math.min(W, (artH * 4) / 3);
@@ -441,7 +434,7 @@
   function fitText() {
     if (!R) return;
     const t = R.text;
-    const cap = { 1: 116, 2: 98, 3: 86 }[R.s.stage] || 92;
+    const cap = { 1: 116, 2: 98, 3: 86, 4: 74 }[R.s.stage] || 74;
     let lo = 18;
     let hi = Math.max(lo + 1, Math.min(cap, t.clientHeight / 1.2, t.clientWidth / 2.4));
     for (let k = 0; k < 9; k++) {
@@ -592,7 +585,7 @@
       }
       const n = +sp.dataset.n;
       stopReading();
-      Speech.speak(NUM[n - 1] || String(n));
+      Voice.say(NUM[n - 1] || String(n));
       Sfx.count(n);
       const total = R.art.lastChild.querySelectorAll('.countable').length;
       if (R.countN === total && !R.countDone) {
@@ -605,7 +598,7 @@
     const word = o.say || WORDS[g];
     if (word) {
       stopReading();
-      Speech.speak(word);
+      Voice.say(word);
       R.text.querySelectorAll('.ch').forEach((c) => {
         if (word.includes(c.textContent)) {
           c.classList.remove('hit');
@@ -630,6 +623,7 @@
   }
 
   /* ---------- 朗读 + 跟读高亮 ---------- */
+  // 没有录音时：估计每个字什么时候读到（毫秒）
   function estimateTimes(text) {
     const per = (290 * 0.8) / Speech.rate;
     const times = [];
@@ -641,6 +635,7 @@
       else if ('。！？'.includes(c)) t += per * 1.35;
       else if (c === '…') t += per * 0.5;
     });
+    times.total = t;
     return times;
   }
 
@@ -655,15 +650,21 @@
     const pg = R.s.pages[R.page];
     const tiles = [...R.text.querySelectorAll('.ch')];
     const times = estimateTimes(pg.text);
+    let marks = null; // 有录音时：每个字开始的秒数
     let t0 = 0;
     let raf = 0;
     R.reading = true;
     R.say.classList.add('on');
     const tick = () => {
       if (!R || token !== R.token) return;
-      const el = performance.now() - t0;
       let cur = -1;
-      tiles.forEach((tile, k) => { if (times[tile.dataset.i] <= el) cur = k; });
+      if (marks) {
+        const t = Voice.time();
+        marks.forEach((m, k) => { if (m <= t + 0.04) cur = k; });
+      } else {
+        const el = performance.now() - t0;
+        tiles.forEach((tile, k) => { if (times[tile.dataset.i] <= el) cur = k; });
+      }
       tiles.forEach((tile, k) => {
         tile.classList.toggle('rd', k === cur);
         tile.classList.toggle('was', k < cur);
@@ -671,9 +672,15 @@
       raf = requestAnimationFrame(tick);
     };
     R.stopTick = () => cancelAnimationFrame(raf);
-    Speech.speak(pg.text, {
-      onstart() {
+    Voice.say(pg.text, {
+      onstart(entry) {
         if (!R || token !== R.token) return;
+        if (entry && entry[2] && entry[2].length === tiles.length) marks = entry[2];
+        else if (entry) {
+          // 录音里没有逐字时间：按估计的比例摊到录音长度上
+          const span = Math.max(0.5, entry[1] - 0.25);
+          marks = tiles.map((tile) => (times[tile.dataset.i] / (times.total || 1)) * span);
+        }
         t0 = performance.now();
         tick();
       },
@@ -694,11 +701,11 @@
   }
 
   function stopReading() {
-    if (!R) { Speech.stop(); return; }
+    if (!R) { Voice.stop(); return; }
     clearTimeout(R.autoT);
     R.token++;
     if (R.stopTick) R.stopTick();
-    if (R.reading) Speech.stop();
+    if (R.reading) Voice.stop();
     R.reading = false;
     R.say.classList.remove('on');
     R.text.querySelectorAll('.rd, .was').forEach((t) => t.classList.remove('rd', 'was'));
@@ -743,7 +750,7 @@
     }
     const opts = shuffle([t, ...others]);
     const talk = canTalk();
-    const prompt = () => Speech.speak('找一找，' + (SAY_ALONE[t] || t));
+    const prompt = () => Voice.seq([PHRASES.quizAsk, t]);
     Q.missed = false;
     Q.busy = false;
     quizEl.innerHTML = '';
@@ -772,7 +779,7 @@
       if (!Q.missed) Q.firstTry += 1;
       Sfx.ding();
       burstAt(b, { set: ['⭐', '✨', '🌟', '💛'], n: 14 });
-      Speech.speak(['对啦！', '真棒！', '答对了！'][Q.n % 3]);
+      Voice.say(PHRASES.praise[Q.n % PHRASES.praise.length]);
       setTimeout(() => {
         if (!Q) return;
         Q.n += 1;
@@ -785,7 +792,7 @@
       void b.offsetWidth;
       b.classList.add('wrong');
       Sfx.oops();
-      if (canTalk()) Speech.speak('再听一听，' + (SAY_ALONE[t] || t));
+      if (canTalk()) Voice.seq([PHRASES.quizAgain, t]);
     }
   }
 
@@ -837,7 +844,7 @@
       setTimeout(() => {
         reveal.hidden = false;
         gift.classList.add('gone');
-        Speech.speak(`太棒了！你得到了${s.prize[1]}！`);
+        Voice.seq([PHRASES.rewardPrefix, s.prize[1]]);
         const st = reveal.querySelector('.sticker');
         burstAt(st, { set: ['✨', '⭐', '💖'], n: 12 });
       }, 650);
@@ -862,7 +869,7 @@
           h('span', { class: 'stk-n' }, have ? s.prize[1] : `第 ${i + 1} 关`));
         b.addEventListener('click', () => {
           pop(b.firstChild);
-          if (have) { Sfx.pop(); Speech.speak(s.prize[1]); burstAt(b, { n: 8, dist: 80 }); }
+          if (have) { Sfx.pop(); Voice.say(s.prize[1]); burstAt(b, { n: 8, dist: 80 }); }
           else toast(`读完第 ${i + 1} 关「${s.title}」就能得到`);
         });
         return b;
@@ -912,24 +919,47 @@
     function draw() {
       body.innerHTML = '';
       const voices = Speech.voices;
+      const status = h('p', { class: 'snd-status', role: 'status' });
+      const test = () => {
+        Voice.unlock();
+        status.textContent = '正在放……';
+        Voice.say(PHRASES.hello, {
+          onstart: (entry) => { status.textContent = entry ? '正在放录好的声音……' : '正在用设备语音读……'; },
+          onend: () => {
+            status.textContent = Voice.lastError
+              ? `录音放不出来（${Voice.lastError}），改用了设备语音。`
+              : '放完了。还是听不到的话：把音量调大，看看是不是连着蓝牙耳机。';
+          },
+        });
+      };
+      const pick = () => {
+        const sel = h('select', { id: 'set-voice', 'aria-label': '选择设备语音' },
+          h('option', { value: '' }, '系统默认的中文声音'),
+          voices.map((v) => {
+            const op = h('option', { value: v.voiceURI }, `${v.name}（${v.lang}）`);
+            if (Speech.voice && v.voiceURI === Speech.voice.voiceURI) op.selected = true;
+            return op;
+          }));
+        sel.addEventListener('change', () => { settings.voice = sel.value; save(); applySettings(); Speech.speak('你好，我们来读故事。'); });
+        return sel;
+      };
       body.append(
-        row('朗读速度', seg(['慢', '正常', '快'], settings.rate, (k) => { settings.rate = k; save(); applySettings(); Speech.speak('山上有羊。'); })),
+        row('声音', h('div', { class: 'snd' },
+          h('button', { class: 'btn tiny', type: 'button', onclick: test }, icon(I.speaker), '听一听'),
+          status),
+          Voice.clips ? `故事、字和表扬的话都录好了音（${Voice.clips} 句），不用设备语音也能读。` : '没有录音，会用设备自带的中文语音。'),
+        row('朗读速度', seg(['慢', '正常', '快'], settings.rate, (k) => { settings.rate = k; save(); applySettings(); Voice.say(STORIES[0].pages[0].text); })),
         row('翻页后自动朗读', sw('set-auto', settings.auto, (v) => { settings.auto = v; save(); }), '关掉后，可以先让孩子自己读，再点「读一读」'),
         row('音效', sw('set-sfx', settings.sfx, (v) => { settings.sfx = v; save(); applySettings(); if (v) Sfx.ding(); })),
         voices.length
-          ? row('声音', h('div', { class: 'voice-pick' },
-              (() => {
-                const sel = h('select', { id: 'set-voice', 'aria-label': '选择声音' }, voices.map((v) => {
-                  const op = h('option', { value: v.voiceURI }, `${v.name}（${v.lang}）`);
-                  if (Speech.voice && v.voiceURI === Speech.voice.voiceURI) op.selected = true;
-                  return op;
-                }));
-                sel.addEventListener('change', () => { settings.voice = sel.value; save(); applySettings(); Speech.speak('你好，我们来读故事。'); });
-                return sel;
-              })(),
-              h('button', { class: 'btn tiny', type: 'button', onclick: () => Speech.speak('小鸟在我的伞下。') }, '试听')))
-          : row('声音', h('p', { class: 'warn' }, '没有找到中文语音，故事读不出声。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音后再打开这个网页。')),
-        row('关卡', sw('set-unlock', progress.unlockAll, (v) => { progress.unlockAll = v; save(); }), '打开后，所有故事都可以直接读'),
+          ? row('设备语音', h('div', { class: 'voice-pick' }, pick()), '只在没有录音的话上用到')
+          : Voice.clips ? null : row('设备语音', h('p', { class: 'warn' }, '没有找到中文语音。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音。')),
+        row('关卡', sw('set-unlock', progress.unlockAll, (v) => {
+          progress.unlockAll = v;
+          save();
+          if (view === 'map') renderMap();
+          toast(v ? '所有关卡都打开了，可以点任何一关' : '关卡恢复成读完一关开一关');
+        }), '打开后，所有故事都可以直接读，不用一关一关解锁'),
         row('重新开始', confirming
           ? h('div', { class: 'confirm' },
               h('span', null, '清空爱心、贴纸和关卡进度？'),
@@ -959,7 +989,7 @@
   });
   // iOS：第一次点屏幕时打开声音
   const unlockOnce = () => {
-    Speech.unlock();
+    Voice.unlock();
     Sfx.unlock();
     window.removeEventListener('click', unlockOnce, true);
     window.removeEventListener('touchend', unlockOnce, true);

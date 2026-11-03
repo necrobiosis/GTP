@@ -1,16 +1,20 @@
 /*
- * 声音：中文朗读（浏览器自带的语音合成）+ 小音效（Web Audio 现场合成，不用音频文件）。
+ * 声音：
+ *   Voice  —— 先放录好的 mp3（audio/ 文件夹，见 tools/gen-audio.py），没有录音的话再用设备自带的中文语音。
+ *   Speech —— 设备自带的中文语音（备用）。
+ *   Sfx    —— 小音效（Web Audio 现场合成，不用音频文件）。
+ * iPad / iPhone 只有在点屏幕的时候才允许出声，所以第一次点屏幕时会先「打开」声音（Voice.unlock）。
  */
 window.Speech = (function () {
   'use strict';
   const synth = window.speechSynthesis;
   const ok = !!(synth && window.SpeechSynthesisUtterance);
   let voices = [];
-  let chosen = null;
+  let chosen = null;  // 只有家长在设置里选了声音，才指定声音；否则交给系统按 zh-CN 挑
   let pref = '';
   let rate = 0.8;
   let unlocked = false;
-  let current = null;   // 留住引用，避免某些浏览器回收后不触发 onend
+  let current = null; // 留住引用，避免某些浏览器回收后不触发 onend
   let watchdog = 0;
   let pendingT = 0;
   const listeners = [];
@@ -18,25 +22,10 @@ window.Speech = (function () {
   function isChinese(v) {
     return /^(zh|cmn)/i.test(v.lang) || /chinese|中文|普通话|國語|国语/i.test(v.name);
   }
-  function score(v) {
-    const lang = (v.lang || '').replace('_', '-').toLowerCase();
-    const n = v.name || '';
-    let s = 0;
-    if (/zh-cn|cmn-hans|zh-hans|cmn-cn/.test(lang)) s += 50;
-    else if (/zh-tw|zh-hant|cmn-tw/.test(lang)) s += 20;
-    else if (/zh-hk|yue/.test(lang)) s -= 40; // 粤语放最后
-    if (/xiaoxiao|xiaoyi|xiaohan|xiaomo|晓晓|晓伊/i.test(n)) s += 30;
-    if (/tingting|婷婷|lili|莉莉|yu-?shu|语舒|lilian/i.test(n)) s += 22;
-    if (/google/i.test(n)) s += 18;
-    if (/natural|neural|premium|enhanced|高级|优化/i.test(n)) s += 12;
-    if (/huihui|yaoyao|kangkang|yunxi|yunyang/i.test(n)) s += 6;
-    if (v.localService) s += 3;
-    return s;
-  }
   function refresh() {
     if (!ok) return;
-    voices = synth.getVoices().filter(isChinese).sort((a, b) => score(b) - score(a));
-    chosen = voices.find((v) => v.voiceURI === pref) || voices[0] || null;
+    voices = synth.getVoices().filter(isChinese).filter((v) => !/zh[-_]hk|yue/i.test(v.lang));
+    chosen = pref ? voices.find((v) => v.voiceURI === pref) || null : null;
     listeners.forEach((f) => f());
   }
   if (ok) {
@@ -47,9 +36,8 @@ window.Speech = (function () {
     setTimeout(refresh, 1500);
   }
 
-  // iOS 要求第一次朗读发生在点击里：点一下屏幕时先“热身”
   function unlock() {
-    if (!ok || unlocked) return;
+    if (!ok || unlocked || synth.speaking || synth.pending) return;
     try {
       const u = new SpeechSynthesisUtterance(' ');
       u.volume = 0;
@@ -71,7 +59,7 @@ window.Speech = (function () {
       u.lang = chosen ? chosen.lang : 'zh-CN';
       if (chosen) u.voice = chosen;
       u.rate = o.rate || rate;
-      u.pitch = o.pitch || 1.05;
+      u.pitch = 1.05;
       u.volume = 1;
       let ended = false;
       const end = () => {
@@ -90,6 +78,7 @@ window.Speech = (function () {
       if (synth.paused) synth.resume();
       watchdog = setTimeout(end, 3000 + (text.length * 520) / u.rate);
     };
+    // 正在说话时先停下；否则马上说（这样还在「点击」里面，iPad 才肯出声）
     if (synth.speaking || synth.pending) {
       synth.cancel();
       pendingT = setTimeout(go, 90);
@@ -104,7 +93,7 @@ window.Speech = (function () {
     clearTimeout(watchdog);
     clearTimeout(pendingT);
     current = null;
-    synth.cancel();
+    if (synth.speaking || synth.pending) synth.cancel();
   }
 
   return {
@@ -118,6 +107,171 @@ window.Speech = (function () {
     setRate(r) { rate = r; },
     setVoice(uri) { pref = uri || ''; refresh(); },
     onVoices(f) { listeners.push(f); },
+  };
+})();
+
+window.Voice = (function () {
+  'use strict';
+  const INDEX = window.AUDIO_INDEX || {};
+  const DATA = window.AUDIO_DATA || null; // 打包成一个文件时，录音直接放在网页里
+  const BASE = 'audio/';
+  const FIX = window.SAY_FIX || [];
+  const ALONE = window.SAY_ALONE || {};
+  // 一小段静音，用来在第一次点屏幕时「打开」播放器
+  const SILENT = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQQAAACAgICA';
+  let el = null;
+  let token = 0;
+  let unlocked = false;
+  let guard = 0;
+  let rate = 1;
+  let lastError = '';
+
+  function player() {
+    if (!el) {
+      el = new Audio();
+      el.preload = 'auto';
+      el.setAttribute('playsinline', '');
+    }
+    return el;
+  }
+  // 录音地址：一般是 audio/xxx.mp3；打包成一个文件时用 data: 地址，放不出来再换 blob: 地址试一次
+  const blobs = {};
+  function blobOf(id) {
+    if (!blobs[id]) {
+      const bin = atob(DATA[id]);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      blobs[id] = URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+    }
+    return blobs[id];
+  }
+  let useBlob = false;
+  const srcOf = (id) => {
+    if (!(DATA && DATA[id])) return BASE + id + '.mp3';
+    return useBlob ? blobOf(id) : 'data:audio/mpeg;base64,' + DATA[id];
+  };
+  const fixText = (t) => FIX.reduce((s, [re, to]) => s.replace(re, to), t);
+  // 设备语音念的文字：单个字用同音字（多音字不读错），句子按 SAY_FIX 改
+  const spoken = (t) => ([...t].length === 1 ? ALONE[t] || t : fixText(t));
+
+  function unlock() {
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 旧浏览器没有 */ }
+    if (unlocked) return;
+    unlocked = true;
+    const a = player();
+    try {
+      a.src = SILENT;
+      const p = a.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* 忽略 */ }
+    if (!Object.keys(INDEX).length) Speech.unlock();
+  }
+
+  // 念一句：有录音放录音，没有就用设备语音。o: { onstart(entry), onend(), onboundary() }
+  function say(text, o) {
+    o = o || {};
+    stop();
+    const tk = token;
+    const entry = INDEX[text];
+    if (!entry) {
+      return Speech.speak(spoken(text), {
+        rate: [...text].length === 1 ? Speech.rate * 0.92 : undefined,
+        onstart: () => { if (tk === token && o.onstart) o.onstart(null); },
+        onboundary: o.onboundary,
+        onend: () => { if (tk === token && o.onend) o.onend(); },
+      });
+    }
+    const a = player();
+    let started = false;
+    let finished = false;
+    const done = () => {
+      if (finished || tk !== token) return;
+      finished = true;
+      clearTimeout(guard);
+      if (o.onend) o.onend();
+    };
+    const fallback = (err) => {
+      if (finished || tk !== token) return;
+      lastError = err && err.name ? err.name : 'error';
+      finished = true;
+      clearTimeout(guard);
+      // 录音放不出来（比如浏览器不让）：改用设备语音
+      Speech.speak(spoken(text), {
+        onstart: () => { if (tk === token && o.onstart) o.onstart(null); },
+        onend: () => { if (tk === token && o.onend) o.onend(); },
+      });
+    };
+    a.onplaying = () => {
+      if (tk !== token || started) return;
+      started = true;
+      lastError = '';
+      if (o.onstart) o.onstart(entry);
+      clearTimeout(guard);
+      guard = setTimeout(done, (entry[1] / (a.playbackRate || 1)) * 1000 + 1500);
+    };
+    a.onended = done;
+    let retried = false;
+    const start = () => {
+      try {
+        a.src = srcOf(entry[0]);
+        a.playbackRate = rate;
+        a.defaultPlaybackRate = rate;
+        const p = a.play();
+        if (p && p.catch) p.catch((err) => { if (!started && !(err && err.name === 'AbortError')) failed(err); });
+      } catch (err) {
+        failed(err);
+      }
+    };
+    // data: 地址放不出来时，换成 blob: 地址再试一次
+    const failed = (err) => {
+      if (tk !== token || started) return;
+      if (!retried && DATA && DATA[entry[0]] && !useBlob) {
+        retried = true;
+        useBlob = true;
+        start();
+        return;
+      }
+      fallback(err);
+    };
+    a.onerror = () => failed(a.error ? { name: 'MediaError' + a.error.code } : null);
+    start();
+    // 4 秒还没开始放：当作失败
+    guard = setTimeout(() => { if (!started) fallback({ name: 'Timeout' }); }, 4000);
+    return true;
+  }
+
+  // 连着念几句，比如「找一找」+「山」
+  function seq(list, o) {
+    o = o || {};
+    const items = list.filter(Boolean);
+    let i = 0;
+    const next = () => {
+      if (i >= items.length) { if (o.onend) o.onend(); return; }
+      say(items[i++], { onend: next });
+    };
+    next();
+  }
+
+  function stop() {
+    token += 1;
+    clearTimeout(guard);
+    if (el && !el.paused) el.pause();
+    Speech.stop();
+  }
+
+  return {
+    say,
+    seq,
+    stop,
+    unlock,
+    has: (t) => !!INDEX[t],
+    entry: (t) => INDEX[t] || null,
+    time: () => (el ? el.currentTime : 0),
+    get clips() { return Object.keys(INDEX).length; },
+    get lastError() { return lastError; },
+    setRate(r) { rate = r; },
+    // 能不能出声：有录音，或者设备有中文语音
+    get ready() { return Object.keys(INDEX).length > 0 || (Speech.ok && Speech.voices.length > 0); },
   };
 })();
 

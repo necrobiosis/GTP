@@ -168,6 +168,8 @@ window.Scenes = (function () {
         return '<div class="pr pr-log"><i class="end"></i></div>';
       case 'nest':
         return '<div class="pr pr-nest"><i class="egg"></i></div>';
+      case 'flower':
+        return '<div class="pr pr-flower"><i class="stem"></i><i class="leaf l"></i><i class="leaf r"></i><i class="head"><i class="face"><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></i></i></div>';
       default:
         return '';
     }
