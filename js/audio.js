@@ -114,7 +114,8 @@ window.Voice = (function () {
   'use strict';
   const INDEX = window.AUDIO_INDEX || {};
   const DATA = window.AUDIO_DATA || null; // 打包成一个文件时，录音直接放在网页里
-  const BASE = 'audio/';
+  // 录音放在哪里：默认是网页旁边的 audio/；放在别处（比如 CDN）时在网页里先写 window.AUDIO_BASE = '…/audio/'
+  const BASE = window.AUDIO_BASE || 'audio/';
   const FIX = window.SAY_FIX || [];
   const ALONE = window.SAY_ALONE || {};
   // 一小段静音，用来在第一次点屏幕时「打开」播放器
