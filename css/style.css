@@ -408,6 +408,12 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 }
 .narrow .say { position: static; grid-area: say; justify-self: center; height: 58px; padding: 0 16px 0 12px; }
 @media (max-width: 380px) { .narrow .say .lbl { display: none; } .narrow .say { width: 64px; padding: 0; justify-content: center; } }
+/* 最后一页右边是更宽的「读完了」，窄屏上「读一读」只留喇叭，免得字折成两行 */
+.say { white-space: nowrap; }
+@media (max-width: 440px) {
+  .narrow .card-box:has(.nav.next.last) .say .lbl { display: none; }
+  .narrow .card-box:has(.nav.next.last) .say { width: 64px; padding: 0; justify-content: center; }
+}
 .narrow .nav { width: 64px; height: 64px; }
 .narrow .nav svg { width: 32px; height: 32px; }
 .narrow .nav.prev { justify-self: start; }
