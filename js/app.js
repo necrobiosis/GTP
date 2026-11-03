@@ -492,7 +492,9 @@
   function openCover(i) {
     const s = STORIES[i];
     const all = hanOf(storyText(s));
-    const fresh = [...new Set(hanOf(s.title + storyText(s)).filter((c) => !KNOWN.has(c)))];
+    // 这一关第一次出现的新字（前面故事里见过的不再列出来）
+    const fresh = EXTRA.filter((e) => e.story === i).map((e) => e.ch);
+    const seen = hanOf(s.title + storyText(s)).some((c) => !KNOWN.has(c));
     const done = isDone(i);
     Voice.unlock();
     modal('cover st-' + s.stage, [
@@ -502,7 +504,7 @@
       h('div', { class: 'cover-title', lang: 'zh-CN' }, [...s.title].map((c) => charTile(c))),
       fresh.length
         ? h('div', { class: 'cover-new' }, h('span', { class: 'lbl' }, '新字'), fresh.map((c) => charTile(c)), h('span', { class: 'hint' }, '点一点，听一听'))
-        : h('div', { class: 'cover-new' }, h('span', { class: 'lbl ok' }, '全是学过的字')),
+        : h('div', { class: 'cover-new' }, h('span', { class: 'lbl ok' }, seen ? '没有新字' : '全是学过的字')),
       h('div', { class: 'cover-prize' },
         h('span', { class: 'pz' + (done ? '' : ' hidden') }, s.prize[0]),
         h('span', null, done ? `已经得到「${s.prize[1]}」，再读一遍还有爱心` : '读完有奖品哦')),
