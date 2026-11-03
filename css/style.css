@@ -1092,7 +1092,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 @media (prefers-reduced-motion: reduce) {
   .sp .i, .scene *, .scene *::before, .scene *::after, .node.current .disc, .node.current .disc::after,
   .flag, .rays, .gift, .rw-hint, .art-hint, .nav.next.last, .pr-pond .wave, .pr-cloud .eye, .pr-flower .eye,
-  .rw-cheer, .kid-card, .kid-thumb, .sn { animation: none !important; }
+  .rw-cheer, .kid-card, .kid-thumb, .sn, .say.help.call, .reader.helping .text .ch, .ask-ic { animation: none !important; }
 }
 
 /* 设置里的声音检查 */
@@ -1288,3 +1288,129 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 }
 .thumb-x svg { width: 12px; height: 12px; }
 label.btn { cursor: pointer; }
+
+/* ================= 自己读 · 求助 ================= */
+/* 举手图标：问号泡泡的底色跟着按钮（--hand-bg） */
+.hand { display: inline-grid; place-items: center; line-height: 0; }
+.hand svg { width: 1.3em; height: 1.3em; }
+.say.help {
+  --hand-bg: #fff;
+  background: #fff; color: var(--rose-deep);
+  box-shadow: 0 5px 0 #f3b4cd, inset 0 0 0 3px #ffd3e4;
+}
+.say.help:active { box-shadow: 0 2px 0 #f3b4cd, inset 0 0 0 3px #ffd3e4; }
+.say.help .hand svg { width: 34px; height: 34px; }
+.say.help.call { animation: callme .7s ease-in-out 2; }
+@keyframes callme {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-8deg) scale(1.1); }
+  40% { transform: rotate(7deg) scale(1.1); }
+  60% { transform: rotate(-5deg); }
+  80% { transform: rotate(3deg); }
+}
+.reader.helping .say.help { --hand-bg: var(--rose); background: var(--rose); color: #fff; box-shadow: 0 5px 0 var(--rose-deep); }
+
+/* 求助以后：上面一条提示，字一起轻轻跳，等着被点 */
+.help-tip {
+  --hand-bg: var(--rose);
+  position: absolute; z-index: 3; left: 50%; top: -30px; translate: -50% 0;
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; border-radius: 999px;
+  background: var(--rose); color: #fff; font: 21px/1 var(--font-display); white-space: nowrap;
+  box-shadow: 0 5px 0 var(--rose-deep), 0 10px 22px rgba(200, 40, 100, .3);
+  animation: tipin .35s cubic-bezier(.3, 1.6, .6, 1);
+}
+.help-tip .hand svg { width: 28px; height: 28px; }
+.tip-x {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .25); color: #fff; cursor: pointer;
+}
+.tip-x svg { width: 16px; height: 16px; }
+@keyframes tipin { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.reader.helping .text .ch {
+  box-shadow: inset 0 0 0 max(1.5px, .028em) var(--grid), 0 0 0 .05em rgba(255, 111, 168, .5), 0 .045em 0 rgba(120, 84, 30, .12);
+  animation: pickme 1.1s ease-in-out infinite;
+}
+.reader.helping .text .wd:nth-child(2n) .ch { animation-delay: .18s; }
+.reader.helping .text .wd:nth-child(3n) .ch { animation-delay: .36s; }
+@keyframes pickme { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-.05em); } }
+
+/* 求助过的字：粉色格子，左下角一个小圆点；这一关里再点就直接读 */
+.ch.helped { --grid: #f5a3c4; background-color: #fff1f7; }
+.ch.helped::before {
+  content: ""; position: absolute; left: .08em; bottom: .08em;
+  width: .15em; height: .15em; border-radius: 50%; background: var(--rose);
+}
+
+/* 自己读的时候点了字：晃一晃，旁边提示去点「求助」 */
+.ch.nope { animation: nope .42s ease-in-out; }
+@keyframes nope {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-.06em) rotate(-4deg); }
+  75% { transform: translateX(.06em) rotate(4deg); }
+}
+.help-nudge {
+  position: absolute; z-index: 3; right: 14px; top: -86px;
+  padding: 9px 14px; border-radius: 16px; background: var(--ink); color: #fff;
+  font: 19px/1.2 var(--font-display); white-space: nowrap; pointer-events: none;
+  animation: tipin .3s cubic-bezier(.3, 1.6, .6, 1);
+}
+.help-nudge::after {
+  content: ""; position: absolute; right: 54px; bottom: -8px;
+  border: 8px solid transparent; border-bottom: 0; border-top-color: var(--ink);
+}
+.narrow .help-nudge { right: auto; left: 50%; translate: -50% 0; top: auto; bottom: 84px; }
+.narrow .help-nudge::after { right: auto; left: 50%; margin-left: -8px; }
+
+/* 顶栏：这一关还有几颗爱心 */
+.r-hearts {
+  flex: none; height: 40px; padding: 0 12px 0 9px; border-radius: 20px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 22px var(--font-display); color: var(--berry); background: rgba(255, 255, 255, .92);
+}
+.r-hearts .ic svg { width: 24px; height: 24px; }
+.r-hearts b { min-width: .7em; font-weight: 400; color: var(--ink); text-align: center; }
+.r-hearts.empty { color: #cbbfc6; }
+.r-hearts.spend { animation: spend .6s ease; }
+@keyframes spend {
+  0%, 100% { transform: scale(1); }
+  30% { transform: scale(1.3) rotate(-8deg); }
+  60% { transform: scale(.9) rotate(5deg); }
+}
+.minus-float { position: absolute; font: 28px var(--font-display); color: var(--berry); text-shadow: 0 2px 0 #fff; pointer-events: none; }
+
+/* 求助前确认 */
+.modal-back.ask .modal { width: min(440px, 100%); padding-top: 28px; }
+.ask-ic {
+  --hand-bg: #ffe1ee;
+  display: grid; place-items: center; width: 104px; height: 104px; margin: 0 auto 8px;
+  border-radius: 50%; background: #ffe1ee; color: var(--rose-deep);
+  animation: callme .8s ease-in-out .2s;
+}
+.ask-ic svg { width: 70px; height: 70px; }
+.ask-cost { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 10px; margin: 6px 0; font: 19px/1.4 var(--font-display); color: var(--ink); }
+.ask-cost .cost {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 14px 4px 10px; border-radius: 999px;
+  background: #ffe1ee; color: var(--berry); font-size: 26px;
+}
+.ask-cost .cost .ic svg { width: 28px; height: 28px; }
+.ask-sub { margin: 0 0 18px; font-size: 15px; color: var(--ink-soft); }
+.ask-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 14px; }
+.ask-btns .btn.big { --hand-bg: var(--rose); padding: 0 30px; background: var(--rose); box-shadow: 0 6px 0 var(--rose-deep); }
+.ask-btns .btn.big:active { box-shadow: 0 2px 0 var(--rose-deep); }
+.ask-btns .hand svg { width: 34px; height: 34px; }
+
+/* 封面：这一关的爱心、怎么求助 */
+.cv-hearts { display: inline-flex; align-items: center; gap: 2px; color: var(--berry); }
+.cv-hearts .ic svg { width: 26px; height: 26px; }
+.cover-help {
+  --hand-bg: var(--paper);
+  margin: -10px 0 18px; text-align: center; font: 16px/1.5 var(--font-display); color: var(--rose-deep);
+}
+.cover-help .hand { vertical-align: -7px; margin-right: 4px; }
+.cover-help .hand svg { width: 28px; height: 28px; }
+
+/* 奖励页：求助了几次 / 全靠自己 */
+.rw-help { display: inline-flex; align-items: center; gap: 6px; margin: 0; font: 19px var(--font-display); color: var(--rose-deep); }
+.rw-help.solo { color: var(--mint-deep); }
+.rw-help .hand svg, .rw-help .ic svg { width: 26px; height: 26px; }
+.rw-help.solo .ic { color: var(--sun); filter: drop-shadow(0 1px 0 #d9a400); }

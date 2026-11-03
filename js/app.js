@@ -27,6 +27,8 @@
     { name: '第六站 · 大海', note: '新字更多，可可会读书了' },
   ];
   const MEDALS = [[10, '🥉', '铜牌'], [30, '🥈', '银牌'], [60, '🥇', '金牌'], [100, '👑', '皇冠']];
+  // 每关能得的爱心（自己读完全都拿到；求助一次用掉一颗），越往后越多
+  const LEVEL_HEARTS = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 5, 6: 5 };
 
   // 故事里出现、但还没学过的字（按第一次出现的顺序）
   const EXTRA = [];
@@ -38,7 +40,10 @@
 
   // 点图片时念的词、固定的话（js/phrases.js）
   const WORDS = window.PIC_WORDS || {};
-  const PHRASES = Object.assign({ quizAsk: '找一找', quizAgain: '再听一听', praise: ['对啦！'], rewardPrefix: '太棒了！你得到了', hello: '你好，我们来读故事。' }, window.PHRASES || {});
+  const PHRASES = Object.assign({
+    quizAsk: '找一找', quizAgain: '再听一听', praise: ['对啦！'], rewardPrefix: '太棒了！你得到了', hello: '你好，我们来读故事。',
+    helpAsk: '要用一颗爱心求助吗？', helpAskFree: '要求助吗？', helpPick: '点一点，你不会读的那个字。', helpHint: '不会读？点举手的按钮求助。',
+  }, window.PHRASES || {});
 
   /* ======================= 存档 ======================= */
   const KEY = 'shizi-gushiwu-v1';
@@ -50,7 +55,9 @@
     likes: saved.likes || 0,
     unlockAll: !!saved.unlockAll,
   };
-  const settings = Object.assign({ rate: 1, auto: true, sfx: true, voice: '' }, saved.settings || {});
+  // together：家长陪读（故事页有「读一读」、点字直接发音）；默认关，孩子先自己读，不会的字再求助
+  const settings = Object.assign({ rate: 1, sfx: true, voice: '', together: false }, saved.settings || {});
+  delete settings.auto; // 以前的「翻页后自动朗读」不要了：先让孩子自己读
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify({ done: progress.done, hearts: progress.hearts, likes: progress.likes, unlockAll: progress.unlockAll, settings }));
@@ -109,6 +116,8 @@
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     replay: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 12.5A7 7 0 1 0 7.4 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M4.6 3.8v4.6h4.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.5l-5.4 2.9 1.2-5.9L3.4 9.4l6-.7z" fill="currentColor"/></svg>',
+    // 求助：举起的小手 + 问号泡泡（泡泡的底色跟着按钮变：--hand-bg）
+    help: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><rect x="5.6" y="6.6" width="2.9" height="9" rx="1.45"/><rect x="8.75" y="4.4" width="2.9" height="11" rx="1.45"/><rect x="11.9" y="5.4" width="2.9" height="10" rx="1.45"/><rect x="15" y="7.8" width="2.7" height="8" rx="1.35"/><rect x="2.3" y="12.2" width="2.9" height="7.4" rx="1.45" transform="rotate(-38 3.75 15.9)"/><path d="M5.6 12.6h12.1v3.2c0 3.6-2.7 6.5-6.05 6.5S5.6 19.4 5.6 15.8z"/></g><circle cx="19.2" cy="4.9" r="4.2" style="fill:var(--hand-bg,#fff)" stroke="currentColor" stroke-width="1.3"/><path d="M17.85 3.95a1.4 1.4 0 1 1 2.05 1.25c-.45.25-.7.55-.7 1.05v.25" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><circle cx="19.2" cy="7.55" r=".72" fill="currentColor"/></svg>',
   };
   const icon = (svg, cls) => h('span', { class: 'ic' + (cls ? ' ' + cls : ''), html: svg });
 
@@ -182,7 +191,13 @@
     if (!canTalk()) warnNoVoice();
     Voice.say(c);
   }
-  function charTile(c, cls, idx) {
+  function hitTile(b) {
+    b.classList.remove('hit');
+    void b.offsetWidth;
+    b.classList.add('hit');
+  }
+  // where：'text' 故事里的字、'title' 封面上的题目——孩子自己读的时候，点了不发音（要求助）
+  function charTile(c, cls, idx, where) {
     const known = KNOWN.has(c);
     const b = h('button', {
       class: `ch${cls ? ' ' + cls : ''}${known ? '' : ' new'}${PRACTICE.has(c) ? ' practice' : ''}`,
@@ -192,11 +207,10 @@
     }, c);
     b.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (where && !settings.together) { tapToRead(b, c, where); return; }
       if (R && view === 'reader') stopReading();
       sayChar(c);
-      b.classList.remove('hit');
-      void b.offsetWidth;
-      b.classList.add('hit');
+      hitTile(b);
       if (view === 'reader' && b.closest('.text')) showBig(c);
     });
     return b;
@@ -501,17 +515,20 @@
       h('div', { class: 'cover-top' },
         h('span', { class: 'chip' }, `第 ${i + 1} 关`),
         h('span', { class: 'meta' }, `${s.pages.length} 页 · ${all.length} 个字`)),
-      h('div', { class: 'cover-title', lang: 'zh-CN' }, [...s.title].map((c) => charTile(c))),
+      h('div', { class: 'cover-title', lang: 'zh-CN' }, [...s.title].map((c) => charTile(c, '', undefined, 'title'))),
       fresh.length
         ? h('div', { class: 'cover-new' }, h('span', { class: 'lbl' }, '新字'), fresh.map((c) => charTile(c)), h('span', { class: 'hint' }, '点一点，听一听'))
         : h('div', { class: 'cover-new' }, h('span', { class: 'lbl ok' }, seen ? '没有新字' : '全是学过的字')),
       h('div', { class: 'cover-prize' },
         h('span', { class: 'pz' + (done ? '' : ' hidden') }, s.prize[0]),
-        h('span', null, done ? `已经得到「${s.prize[1]}」，再读一遍还有爱心` : '读完有奖品哦')),
+        h('span', null, done ? `已经得到「${s.prize[1]}」，再读一遍还有爱心` : '读完有奖品哦'),
+        h('span', { class: 'cv-hearts', title: '这一关的爱心' }, icon(I.heart), `×${LEVEL_HEARTS[s.stage] || 3}`)),
+      settings.together ? null : h('p', { class: 'cover-help' },
+        h('span', { class: 'ic hand', html: I.help }), '先自己读。不会的字点「求助」，每次用一颗爱心，只读一个字。'),
       h('div', { class: 'cover-btns' },
         h('button', { class: 'btn big', type: 'button', onclick: () => openReader(i) }, '开始读', icon(I.next))),
     ]);
-    Voice.say(s.title);
+    // 不先读题目：让孩子自己读
   }
 
   /* ======================= 读故事 ======================= */
@@ -538,20 +555,36 @@
     const art = h('div', { class: 'art' });
     const hint = h('div', { class: 'art-hint', hidden: true }, '点一点，数一数');
     const dots = h('div', { class: 'dots' }, s.pages.map(() => h('i')));
+    const self = !settings.together; // 孩子自己读（默认）
+    const base = LEVEL_HEARTS[s.stage] || 3;
+    const hearts = h('div', { class: 'r-hearts', title: '这一关的爱心，求助一次用一颗' }, icon(I.heart), h('b', null, String(base)));
     const bar = h('header', { class: 'r-bar' },
       h('button', { class: 'rbtn', type: 'button', 'aria-label': '回到小路', html: I.home, onclick: () => exitReader() }),
       h('div', { class: 'r-title' }, h('b', null, s.title), dots),
+      self ? hearts : null,
       h('div', { class: 'r-count' }, ''));
     const text = h('div', { class: 'text', lang: 'zh-CN' });
     const prev = h('button', { class: 'nav prev', type: 'button', 'aria-label': '上一页', html: I.prev, onclick: () => go(-1) });
     const next = h('button', { class: 'nav next', type: 'button', 'aria-label': '下一页', onclick: () => go(1) }, icon(I.next), h('span', { class: 'done-lbl' }, '读完了'));
-    const say = h('button', { class: 'say', type: 'button', 'aria-label': '读一读', onclick: () => toggleRead() },
+    const say = h('button', { class: 'say read', type: 'button', 'aria-label': '读一读', onclick: () => toggleRead() },
       icon(I.speaker, 'on-idle'), icon(I.stop, 'on-play'), h('span', { class: 'lbl' }, '读一读'));
-    const card = h('section', { class: 'card' }, h('div', { class: 'card-box' }, prev, text, next, say));
+    const helpLbl = h('span', { class: 'lbl' }, '求助');
+    const help = h('button', { class: 'say help', type: 'button', 'aria-label': '求助', onclick: () => askHelp() },
+      h('span', { class: 'ic hand', html: I.help }), helpLbl);
+    const tip = h('div', { class: 'help-tip', role: 'status', hidden: true },
+      h('span', { class: 'ic hand', html: I.help }), h('span', null, '点一点你不会读的字'),
+      h('button', { class: 'tip-x', type: 'button', 'aria-label': '不用了', html: I.close, onclick: (e) => { e.stopPropagation(); cancelHelp(); } }));
+    const nudge = h('div', { class: 'help-nudge', hidden: true }, '不会读？点这里求助');
+    const card = h('section', { class: 'card' }, h('div', { class: 'card-box' }, prev, text, next, self ? help : say, self ? tip : null, self ? nudge : null));
     const big = h('div', { class: 'bigchar', 'aria-hidden': 'true' });
-    const root = h('div', { class: `reader st-${s.stage}` }, scenes, art, hint, bar, card, big);
+    const root = h('div', { class: `reader st-${s.stage}${self ? ' self' : ''}` }, scenes, art, hint, bar, card, big);
     app.append(root);
-    R = { i, s, page: -1, root, scenes, art, hint, dots, count: bar.querySelector('.r-count'), text, prev, next, say, big, token: 0, autoT: 0, swiped: false };
+    R = {
+      i, s, page: -1, root, scenes, art, hint, dots, count: bar.querySelector('.r-count'), text, prev, next, say, big, token: 0, autoT: 0, swiped: false,
+      // 求助：这一关的爱心、求助了几次、求助过的字（再点不扣）、是不是正在挑字
+      self, base, hearts: base, helps: 0, helped: new Set(), helping: false, helpPaid: false, hinted: false,
+      help, helpLbl, tip, nudgeEl: nudge, heartsEl: hearts,
+    };
     bindSwipe(root);
     showPage(Math.min(page || 0, s.pages.length - 1), 0);
   }
@@ -618,7 +651,9 @@
       if (isHan(c)) {
         group = h('span', { class: 'wd' });
         if (open) { group.append(h('span', { class: 'pu op' }, open)); open = ''; }
-        group.append(charTile(c, '', idx));
+        const tile = charTile(c, '', idx, 'text');
+        if (R.helped.has(c)) tile.classList.add('helped');
+        group.append(tile);
         t.append(group);
       } else if (OPEN.includes(c)) {
         open += c;
@@ -657,6 +692,7 @@
     if (p < 0 || p >= s.pages.length) return;
     stopReading();
     clearTimeout(R.autoT);
+    if (R.helping) cancelHelp();
     const pg = s.pages[p];
     const prevScene = R.page >= 0 ? s.pages[R.page].scene : null;
     R.page = p;
@@ -698,7 +734,7 @@
     R.next.classList.toggle('last', last);
     R.next.setAttribute('aria-label', last ? '读完了' : '下一页');
 
-    if (settings.auto) R.autoT = setTimeout(readPage, dir ? 650 : 900);
+    // 翻页后不自动朗读：先让孩子自己读，不会的字再求助
   }
 
   function go(d) {
@@ -780,6 +816,124 @@
     void R.big.offsetWidth;
     R.big.classList.add('show');
     bigT = setTimeout(() => R && R.big.classList.remove('show'), 1500);
+  }
+
+  /* ---------- 自己读 + 求助 ---------- */
+  // 孩子先自己读。不会读的字点「求助」→ 确认用一颗爱心 → 点那个字 → 只读这一个字。
+  // 求助过的字，这一关里再点就直接读，不再扣。
+  function tapToRead(b, c, where) {
+    if (where === 'text' && R) {
+      if (R.helped.has(c)) {
+        if (R.helping) cancelHelp(); // 这个字已经求助过了，不用再花爱心
+        stopReading();
+        sayChar(c);
+        hitTile(b);
+        showBig(c);
+        return;
+      }
+      if (R.helping) { useHelp(b, c); return; }
+    }
+    // 自己读的时候点字不发音：晃一晃，提醒去点「求助」
+    b.classList.remove('nope');
+    void b.offsetWidth;
+    b.classList.add('nope');
+    if (where === 'text' && R) nudgeHelp();
+  }
+  let nudgeT = 0;
+  function nudgeHelp() {
+    const btn = R.help;
+    btn.classList.remove('call');
+    void btn.offsetWidth;
+    btn.classList.add('call');
+    R.nudgeEl.hidden = false;
+    clearTimeout(nudgeT);
+    nudgeT = setTimeout(() => { if (R) R.nudgeEl.hidden = true; }, 2600);
+    // 第一次说出来（小朋友还看不懂字），以后只晃按钮
+    if (!R.hinted) { R.hinted = true; Voice.say(PHRASES.helpHint); }
+  }
+  function updateHearts(spent) {
+    if (!R || !R.heartsEl) return;
+    const el = R.heartsEl;
+    el.querySelector('b').textContent = String(R.hearts);
+    el.classList.toggle('empty', R.hearts <= 0);
+    if (!spent) return;
+    el.classList.remove('spend');
+    void el.offsetWidth;
+    el.classList.add('spend');
+    const r = el.getBoundingClientRect();
+    const m = h('span', { class: 'minus-float' }, '−1');
+    m.style.left = r.left + r.width / 2 + 'px';
+    m.style.top = r.bottom + 'px';
+    fx.append(m);
+    if (!m.animate) { setTimeout(() => m.remove(), 600); return; }
+    m.animate([
+      { transform: 'translate(-50%, 0) scale(.6)', opacity: 0 },
+      { transform: 'translate(-50%, 10px) scale(1.2)', opacity: 1, offset: 0.25 },
+      { transform: 'translate(-50%, 46px) scale(1)', opacity: 0 },
+    ], { duration: 1100, easing: 'ease-out' }).onfinish = () => m.remove();
+  }
+  function askHelp() {
+    if (!R) return;
+    if (R.helping) { cancelHelp(); return; }
+    stopReading();
+    R.nudgeEl.hidden = true;
+    const left = R.hearts;
+    modal('ask', [
+      h('div', { class: 'ask-ic', html: I.help }),
+      h('h2', null, '不会读了吗？'),
+      left > 0
+        ? h('p', { class: 'ask-cost' }, h('span', { class: 'cost' }, icon(I.heart), '−1'), h('span', null, `求助要用掉一颗爱心，这一关还有 ${left} 颗。`))
+        : h('p', { class: 'ask-cost' }, '这一关的爱心用完了，求助不再扣爱心。'),
+      h('p', { class: 'ask-sub' }, '求助以后，点你不会读的那个字，只读这一个字。'),
+      h('div', { class: 'ask-btns' },
+        h('button', { class: 'btn big', type: 'button', onclick: () => { closeModal(); startHelp(); } },
+          h('span', { class: 'ic hand', html: I.help }), '求助'),
+        h('button', { class: 'btn soft', type: 'button', onclick: () => { closeModal(); Voice.stop(); } }, '我再试试')),
+    ]);
+    Voice.say(left > 0 ? PHRASES.helpAsk : PHRASES.helpAskFree);
+  }
+  function startHelp() {
+    if (!R) return;
+    R.helpPaid = R.hearts > 0;
+    if (R.helpPaid) {
+      R.hearts -= 1;
+      updateHearts(true);
+    }
+    R.helps += 1;
+    R.helping = true;
+    R.root.classList.add('helping');
+    R.helpLbl.textContent = '不用了';
+    R.help.setAttribute('aria-label', '不用了');
+    R.tip.hidden = false;
+    Voice.say(PHRASES.helpPick);
+  }
+  function endHelp() {
+    R.helping = false;
+    R.helpPaid = false;
+    R.root.classList.remove('helping');
+    R.helpLbl.textContent = '求助';
+    R.help.setAttribute('aria-label', '求助');
+    R.tip.hidden = true;
+  }
+  // 挑字之前不要了：爱心还回去
+  function cancelHelp() {
+    if (!R || !R.helping) return;
+    if (R.helpPaid) {
+      R.hearts += 1;
+      updateHearts(false);
+    }
+    R.helps -= 1;
+    endHelp();
+    Voice.stop();
+  }
+  function useHelp(b, c) {
+    endHelp();
+    R.helped.add(c);
+    R.text.querySelectorAll('.ch').forEach((t) => { if (t.textContent === c) t.classList.add('helped'); });
+    stopReading();
+    sayChar(c);
+    hitTile(b);
+    showBig(c);
   }
 
   /* ---------- 朗读 + 跟读高亮 ---------- */
@@ -885,6 +1039,7 @@
   }
 
   function startQuiz() {
+    if (R.helping) cancelHelp();
     stopReading();
     const s = R.s;
     const pool = [...new Set(hanOf(storyText(s)))].filter((c) => KNOWN.has(c) && !SKIP_QUIZ.has(c));
@@ -892,7 +1047,7 @@
     const fromTitle = shuffle(pool.filter((c) => !PRACTICE.has(c) && s.title.includes(c)));
     const rest = shuffle(pool.filter((c) => !PRACTICE.has(c) && !s.title.includes(c)));
     const targets = [...new Set([...first, ...fromTitle.slice(0, 1), ...rest])].slice(0, 3);
-    Q = { s, i: R.i, pool, targets, n: 0, firstTry: 0, missed: false, busy: false };
+    Q = { s, i: R.i, pool, targets, n: 0, firstTry: 0, missed: false, busy: false, self: R.self, base: R.base, hearts: R.hearts, helps: R.helps };
     quizEl = h('div', { class: `quiz st-${s.stage}` });
     document.body.append(quizEl);
     Sfx.ding();
@@ -961,7 +1116,8 @@
     const s = Q.s;
     const i = Q.i;
     const firstTime = !progress.done[s.id];
-    const gain = 3 + Q.firstTry;
+    // 这一关的爱心（求助用掉的不算）+ 小挑战一次答对的
+    const gain = Q.hearts + Q.firstTry;
     const before = progress.hearts;
     progress.hearts += gain;
     progress.done[s.id] = { n: ((progress.done[s.id] || {}).n || 0) + 1, at: Date.now() };
@@ -985,6 +1141,9 @@
     const reveal = h('div', { class: 'rw-reveal', hidden: true },
       h('p', { class: 'rw-name' }, firstTime ? `得到新贴纸「${s.prize[1]}」！` : `又见到「${s.prize[1]}」啦！`),
       h('p', { class: 'rw-hearts' }, icon(I.heart), h('b', { class: 'plus' }, '+' + gain), h('span', null, `一共 ${progress.hearts} 颗爱心`)),
+      Q.self ? h('p', { class: 'rw-help' + (Q.helps ? '' : ' solo') },
+        Q.helps ? [h('span', { class: 'ic hand', html: I.help }), `求助了 ${Q.helps} 次，用掉 ${Q.base - Q.hearts} 颗爱心`]
+          : [icon(I.star), '全靠自己读完，一次也没求助！']) : null,
       medal ? h('p', { class: 'rw-medal' }, `爱心满 ${medal[0]} 颗，得到${medal[2]} ${medal[1]}`) : null,
       nextI < 0 ? h('p', { class: 'rw-all' }, '所有故事都读完啦！') : null,
       h('div', { class: 'rw-btns' },
@@ -1123,7 +1282,8 @@
           status),
           Voice.clips ? `故事、字和表扬的话都录好了音（${Voice.clips} 句），不用设备语音也能读。` : '没有录音，会用设备自带的中文语音。'),
         row('朗读速度', seg(['慢', '正常', '快'], settings.rate, (k) => { settings.rate = k; save(); applySettings(); Voice.say(STORIES[0].pages[0].text); })),
-        row('翻页后自动朗读', sw('set-auto', settings.auto, (v) => { settings.auto = v; save(); }), '关掉后，可以先让孩子自己读，再点「读一读」'),
+        row('家长陪读', sw('set-together', settings.together, (v) => { settings.together = v; save(); }),
+          '关着（默认）：孩子先自己读，不会的字点「求助」，用一颗爱心换一个字的读音。打开：故事页有「读一读」可以整页朗读，点字直接发音，不扣爱心。'),
         row('音效', sw('set-sfx', settings.sfx, (v) => { settings.sfx = v; save(); applySettings(); if (v) Sfx.ding(); })),
         voices.length
           ? row('设备语音', h('div', { class: 'voice-pick' }, pick()), '只在没有录音的话上用到')
@@ -1183,7 +1343,7 @@
     if (view !== 'reader' || !R || quizEl) return;
     if (e.key === 'ArrowRight') go(1);
     else if (e.key === 'ArrowLeft') go(-1);
-    else if (e.key === ' ') { e.preventDefault(); toggleRead(); }
+    else if (e.key === ' ' && settings.together) { e.preventDefault(); toggleRead(); }
   });
   // iOS：第一次点屏幕时打开声音
   const unlockOnce = () => {

@@ -33,12 +33,7 @@ STORIES.forEach((s) => {
 });
 chars.forEach((c) => add(c, SAY_ALONE[c] || c, 'char'));
 Object.values(PIC_WORDS).forEach((w) => add(w, w, 'word'));
-add(PHRASES.quizAsk, null, 'phrase');
-add(PHRASES.quizAgain, null, 'phrase');
-PHRASES.praise.forEach((w) => add(w, null, 'phrase'));
-add(PHRASES.rewardPrefix, null, 'phrase');
-add(PHRASES.hello, null, 'phrase');
-(PHRASES.cheers || []).forEach((w) => add(w, null, 'phrase'));
-add(PHRASES.stageDone, null, 'phrase');
+// js/phrases.js 里所有固定的话（表扬、求助的提示……）
+Object.values(PHRASES).flat().forEach((w) => add(w, null, 'phrase'));
 
 process.stdout.write(JSON.stringify([...items.values()], null, 1));
