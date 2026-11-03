@@ -34,9 +34,12 @@ ROOT = Path(__file__).resolve().parent.parent
 AUDIO_DIR = ROOT / "audio"
 INDEX_FILE = ROOT / "js" / "audio-index.js"
 DEFAULT_MODELS = ROOT / "tools" / ".cache" / "kokoro"
-VOICE = "zf_084"  # 50 个女声里节奏最自然、识别也准的一个（见 README）
-REF_F0 = 277  # 这个声音说话时的平均音高（Hz），用来判断声调
-SPEED = {"char": 0.85, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1}
+# 句子、标题、词、表扬的话：zf_084，一句话读得连贯、有轻有重（50 个女声里节奏最自然、识别也准）
+VOICE = "zf_084"
+# 点一个字时念的单字：zf_003，单念时字音更清楚、也长一点（语音识别核对 106 个字：zf_003 对 72 个，zf_084 对 49–60 个）
+CHAR_VOICE = "zf_003"
+REF_F0 = {"zf_084": 277, "zf_003": 216}  # 声音说话时的平均音高（Hz），用来判断声调
+SPEED = {"char": 0.8, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1}
 TONES = set("12345")
 HAN = re.compile(r"[㐀-鿿]")
 
@@ -53,9 +56,13 @@ def load_items():
     return json.loads(out)
 
 
+def voice_for(kind):
+    return CHAR_VOICE if kind == "char" else VOICE
+
+
 def clip_id(say, kind):
     recipe = "" if kind == "char" else "|carrier2"
-    return hashlib.sha1(f"{VOICE}|{SPEED[kind]}|{say}{recipe}".encode("utf-8")).hexdigest()[:10]
+    return hashlib.sha1(f"{voice_for(kind)}|{SPEED[kind]}|{say}{recipe}".encode("utf-8")).hexdigest()[:10]
 
 
 def syllables(phonemes):
@@ -191,7 +198,7 @@ def quietest(env, sr, t0, t1):
     return i0 + int(np.argmin(env[i0:i1]))
 
 
-def make_single(kokoro, phonemes, speed, ref):
+def make_single(kokoro, phonemes, speed, ref, voice=CHAR_VOICE):
     """单个字：单独念时模型常在前面多出一个「衣」的音、声调也不稳，所以放在句子中间念几种，
     在真正没声音的地方剪出来（模型报的时间会晚 0–0.15 秒，不能直接按它剪），挑声调形状最像的一个。"""
     tone = next((c for c in phonemes if c in TONES), "5")
@@ -205,7 +212,7 @@ def make_single(kokoro, phonemes, speed, ref):
             # 都不够像：换个语速再试一轮
             tries += [(n, speed + 0.12) for n in SINGLE_ORDER.get(tone, ["mid"])] + [(n, speed - 0.08) for n in SINGLE_ORDER.get(tone, ["mid"])]
         pattern, k = SINGLE_PATTERNS[name]
-        audio, sr, timings = kokoro.create_timed(pattern.format(p=phonemes), voice=VOICE, speed=sp, is_phonemes=True)
+        audio, sr, timings = kokoro.create_timed(pattern.format(p=phonemes), voice=voice, speed=sp, is_phonemes=True)
         audio = np.asarray(audio, dtype=np.float32)
         spans = syllable_spans(timings)
         if len(spans) <= k + 1:
@@ -222,7 +229,7 @@ def make_single(kokoro, phonemes, speed, ref):
         if best is None or score > best[3]:
             best = (clip, sr, f"{name}@{sp:.2f}", score)
     if best is None:
-        audio, sr, _ = kokoro.create_timed(phonemes, voice=VOICE, speed=speed, is_phonemes=True)
+        audio, sr, _ = kokoro.create_timed(phonemes, voice=voice, speed=speed, is_phonemes=True)
         return np.asarray(audio, dtype=np.float32), sr, "单独念", False
     clip, sr, name, score = best
     return clip, sr, f"{name} {score:+.1f}", tone_ok(clip, sr, tone, ref)
@@ -338,7 +345,7 @@ def main():
             continue
         ph, _ = g2p(say)
         if kind == "char":
-            audio, sr, method, ok = make_single(kokoro, ph, SPEED[kind], REF_F0)
+            audio, sr, method, ok = make_single(kokoro, ph, SPEED[kind], REF_F0[CHAR_VOICE])
             starts = []
             if not ok:
                 warn.append(f"「{key}」的声调形状不太对，请听一下（用的是{method}）")
