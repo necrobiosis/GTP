@@ -23,6 +23,8 @@
     { name: '第二站 · 花朵', note: '一页一两句' },
     { name: '第三站 · 大树', note: '一页两三句，长一点' },
     { name: '第四站 · 果子', note: '一页一段话，最后一个故事一口气读完' },
+    { name: '第五站 · 小河', note: '可可来了！每个故事学几个新字' },
+    { name: '第六站 · 大海', note: '新字更多，可可会读书了' },
   ];
   const MEDALS = [[10, '🥉', '铜牌'], [30, '🥈', '银牌'], [60, '🥇', '金牌'], [100, '👑', '皇冠']];
 
@@ -45,12 +47,13 @@
   const progress = {
     done: saved.done || {},
     hearts: saved.hearts || 0,
+    likes: saved.likes || 0,
     unlockAll: !!saved.unlockAll,
   };
   const settings = Object.assign({ rate: 1, auto: true, sfx: true, voice: '' }, saved.settings || {});
   function save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ done: progress.done, hearts: progress.hearts, unlockAll: progress.unlockAll, settings }));
+      localStorage.setItem(KEY, JSON.stringify({ done: progress.done, hearts: progress.hearts, likes: progress.likes, unlockAll: progress.unlockAll, settings }));
     } catch (e) { /* 无痕模式等情况下存不了，没关系 */ }
   }
   function applySettings() {
@@ -223,6 +226,159 @@
     setTimeout(() => m.remove(), 240);
   }
 
+  /* ======================= 可可：照片、点赞、表扬 ======================= */
+  const KID = window.KID || (window.KID = { name: '可可', photos: [] });
+  // 家长在网页里加的照片，只存在这台设备上（IndexedDB）
+  const PhotoDB = (() => {
+    let db = null;
+    const open = () => new Promise((res, rej) => {
+      if (db) { res(db); return; }
+      if (!window.indexedDB) { rej(new Error('no indexedDB')); return; }
+      const r = indexedDB.open('shizi-kid-photos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+      r.onsuccess = () => { db = r.result; res(db); };
+      r.onerror = () => rej(r.error);
+    });
+    const run = (mode, fn) => open().then((d) => new Promise((res, rej) => {
+      const q = fn(d.transaction('photos', mode).objectStore('photos'));
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    }));
+    return {
+      all: () => run('readonly', (st) => st.getAll()).catch(() => []),
+      put: (rec) => run('readwrite', (st) => st.put(rec)),
+      del: (id) => run('readwrite', (st) => st.delete(id)),
+    };
+  })();
+  let userPhotos = [];
+  const allPhotos = () => [...(KID.photos || []), ...userPhotos.map((p) => p.data)];
+  const baseAvatar = KID.avatar || '';
+  function refreshAvatar() {
+    KID.avatar = baseAvatar || (userPhotos[0] && userPhotos[0].data) || '';
+  }
+  function loadUserPhotos() {
+    return PhotoDB.all().then((list) => {
+      userPhotos = (list || []).sort((a, b) => a.id - b.id);
+      refreshAvatar();
+    }).catch(() => {});
+  }
+  function fileToPhoto(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const sc = Math.min(1, 720 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * sc);
+        c.height = Math.round(img.naturalHeight * sc);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        res(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+      img.src = url;
+    });
+  }
+
+  // 读完一关时跳出来的表扬（每次不大一样，都有「可可」）
+  let lastCheer = -1;
+  function pickCheer(stageEnd) {
+    if (stageEnd && PHRASES.stageDone) return PHRASES.stageDone;
+    const list = PHRASES.cheers && PHRASES.cheers.length ? PHRASES.cheers : [`${KID.name}，你真棒！`];
+    let k = Math.floor(Math.random() * list.length);
+    if (k === lastCheer && list.length > 1) k = (k + 1) % list.length;
+    lastCheer = k;
+    return list[k];
+  }
+  let lastPhoto = -1;
+  function pickPhoto() {
+    const list = allPhotos();
+    if (!list.length) return '';
+    let k = Math.floor(Math.random() * list.length);
+    if (k === lastPhoto && list.length > 1) k = (k + 1) % list.length;
+    lastPhoto = k;
+    return list[k];
+  }
+
+  // 打包成一个文件时视频是 data: 地址；iPhone / iPad 上换成 blob: 地址更容易播放
+  const blobURLs = {};
+  function playable(src) {
+    if (!src || src.slice(0, 5) !== 'data:') return src;
+    if (blobURLs[src]) return blobURLs[src];
+    try {
+      const comma = src.indexOf(',');
+      const bin = atob(src.slice(comma + 1));
+      const u8 = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+      blobURLs[src] = URL.createObjectURL(new Blob([u8], { type: src.slice(5, comma).split(';')[0] }));
+      return blobURLs[src];
+    } catch (e) { return src; }
+  }
+
+  // 照片卡：一直往上冒 👍 和 ❤️，点一下再点个赞
+  function floatLike(card) {
+    const icons = ['👍', '❤️', '👍', '💖', '👍', '⭐'];
+    const s = h('span', { class: 'like-float' }, icons[Math.floor(Math.random() * icons.length)]);
+    // 从照片两边往上飘，不挡住脸
+    const side = Math.random() < 0.5 ? -1 : 1;
+    s.style.left = (side < 0 ? 2 + Math.random() * 12 : 86 + Math.random() * 12) + '%';
+    card.append(s);
+    if (!s.animate) { setTimeout(() => s.remove(), 300); return; }
+    const dx = side * (10 + Math.random() * 40);
+    const an = s.animate([
+      { transform: 'translate(0, 0) scale(.4)', opacity: 0 },
+      { transform: `translate(${dx * 0.4}px, -40px) scale(1)`, opacity: 1, offset: 0.2 },
+      { transform: `translate(${dx}px, -150px) scale(1.15)`, opacity: 0 },
+    ], { duration: 1600 + Math.random() * 600, easing: 'ease-out' });
+    an.onfinish = () => s.remove();
+  }
+  function photoCard(o) {
+    o = o || {};
+    const count = h('b', null, String(progress.likes));
+    let media;
+    if (o.video) {
+      media = h('video', { src: playable(o.video), poster: o.poster || '', muted: true, autoplay: true, loop: true, playsinline: true, 'webkit-playsinline': true, preload: 'auto' });
+      media.muted = true;
+      media.addEventListener('error', () => { if (media.src !== o.video && o.video.slice(0, 5) === 'data:') media.src = o.video; }, { once: true });
+      const p = media.play && media.play();
+      if (p && p.catch) p.catch(() => {});
+    } else {
+      media = h('img', { src: o.src, alt: KID.name, draggable: 'false' });
+    }
+    const card = h('button', { class: 'kid-card' + (o.small ? ' small' : ''), type: 'button', 'aria-label': `给${KID.name}点赞` },
+      h('span', { class: 'kid-photo' }, media, h('span', { class: 'kid-thumb', 'aria-hidden': 'true' }, '👍')),
+      o.video ? h('span', { class: 'kid-play' }, `🔊 听${KID.name}说话`) : null,
+      h('span', { class: 'kid-likes' }, '👍 ', count, ' 个赞'));
+    // 一直往上冒的赞（系统设置了「减少动态效果」时不冒，点了才冒）
+    const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const timer = calm ? 0 : setInterval(() => {
+      if (!card.isConnected) { clearInterval(timer); return; }
+      if (!o.small || Math.random() < 0.3) floatLike(card);
+    }, o.small ? 900 : 420);
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      progress.likes += 1;
+      save();
+      count.textContent = String(progress.likes);
+      card.classList.remove('liked');
+      void card.offsetWidth;
+      card.classList.add('liked');
+      Sfx.pop();
+      for (let k = 0; k < 4; k++) setTimeout(() => card.isConnected && floatLike(card), k * 90);
+      burstAt(card, { set: ['👍', '❤️', '💖', '⭐'], n: 10, dist: 120 });
+      if (o.video) {
+        Voice.stop();
+        media.muted = false;
+        media.loop = false;
+        try { media.currentTime = 0; } catch (err) { /* 忽略 */ }
+        const p = media.play();
+        if (p && p.catch) p.catch(() => {});
+        media.onended = () => { media.muted = true; media.loop = true; const q = media.play(); if (q && q.catch) q.catch(() => {}); };
+      }
+    });
+    return card;
+  }
+
   /* ======================= 地图（闯关小路） ======================= */
   const app = document.getElementById('app');
   let view = 'map';
@@ -250,10 +406,12 @@
 
     const head = h('header', { class: 'map-head' },
       h('div', { class: 'brand' },
-        h('div', { class: 'logo', 'aria-hidden': 'true' }, h('span', null, '字')),
+        KID.avatar
+          ? h('button', { class: 'logo kid', type: 'button', 'aria-label': `给${KID.name}点赞`, onclick: (e) => { Sfx.pop(); burstAt(e.currentTarget, { set: ['👍', '❤️', '⭐'], n: 8, dist: 90 }); Voice.say(KID.name); } }, h('img', { src: KID.avatar, alt: '' }))
+          : h('div', { class: 'logo', 'aria-hidden': 'true' }, h('span', null, '字')),
         h('div', { class: 'brand-t' },
           h('h1', null, '识字故事屋'),
-          h('p', null, `认识 ${KNOWN_LIST.length} 个字 · ${STORIES.length} 个故事 · 读完 ${doneCount} 个`))),
+          h('p', null, `${KID.name}认识 ${KNOWN_LIST.length} 个字 · ${STORIES.length} 个故事 · 读完 ${doneCount} 个`))),
       h('div', { class: 'tools' },
         h('div', { class: 'hearts', title: '爱心' }, icon(I.heart), h('b', null, progress.hearts)),
         toolBtn(I.gift, '宝箱', openStickers),
@@ -434,7 +592,7 @@
   function fitText() {
     if (!R) return;
     const t = R.text;
-    const cap = { 1: 116, 2: 98, 3: 86, 4: 74 }[R.s.stage] || 74;
+    const cap = { 1: 116, 2: 98, 3: 86, 4: 74, 5: 80, 6: 76 }[R.s.stage] || 74;
     let lo = 18;
     let hi = Math.max(lo + 1, Math.min(cap, t.clientHeight / 1.2, t.clientWidth / 2.4));
     for (let k = 0; k < 9; k++) {
@@ -812,11 +970,17 @@
     stopReading();
     quizEl.innerHTML = '';
     quizEl.className = 'reward';
+    const stageEnd = nextI < 0 || STORIES[nextI].stage !== s.stage;
+    const cheer = pickCheer(stageEnd);
+    const pic = stageEnd && KID.video ? '' : pickPhoto();
+    const card = stageEnd && KID.video ? photoCard({ video: KID.video, poster: KID.poster }) : pic ? photoCard({ src: pic }) : null;
+    // 表扬的话里，「可可」两个字用黄色
+    const cheerKids = cheer.split(KID.name).flatMap((part, k) => (k ? [h('span', { class: 'nm' }, KID.name), part] : [part]));
     const gift = h('button', { class: 'gift', type: 'button', 'aria-label': '打开礼物' },
       h('i', { class: 'box' }), h('i', { class: 'lid' }), h('i', { class: 'bow l' }), h('i', { class: 'bow r' }));
     const tapHint = h('p', { class: 'rw-hint' }, '点一点礼物');
+    const sticker = h('div', { class: 'sticker', hidden: true }, h('span', null, s.prize[0]));
     const reveal = h('div', { class: 'rw-reveal', hidden: true },
-      h('div', { class: 'sticker' }, h('span', null, s.prize[0])),
       h('p', { class: 'rw-name' }, firstTime ? `得到新贴纸「${s.prize[1]}」！` : `又见到「${s.prize[1]}」啦！`),
       h('p', { class: 'rw-hearts' }, icon(I.heart), h('b', { class: 'plus' }, '+' + gain), h('span', null, `一共 ${progress.hearts} 颗爱心`)),
       medal ? h('p', { class: 'rw-medal' }, `爱心满 ${medal[0]} 颗，得到${medal[2]} ${medal[1]}`) : null,
@@ -827,9 +991,9 @@
         h('button', { class: 'btn soft', type: 'button', onclick: () => { stopQuizUI(); renderMap(nextI >= 0 ? nextI : i); } }, icon(I.home), '回到小路')));
     quizEl.append(
       h('div', { class: 'rays', 'aria-hidden': 'true' }),
-      h('h2', { class: 'rw-title' }, '读完啦！'),
-      h('div', { class: 'rw-stage' }, gift, tapHint),
-      reveal);
+      h('h2', { class: 'rw-cheer', style: `--n:${[...cheer].length + 1.6}` }, cheerKids),
+      h('div', { class: 'rw-row' + (card ? '' : ' solo') }, card, h('div', { class: 'rw-stage' }, gift, sticker, tapHint), reveal));
+    setTimeout(() => { if (quizEl) { Voice.say(cheer); Sfx.sparkle(); } }, 250);
 
     let opened = false;
     gift.addEventListener('click', (e) => {
@@ -842,17 +1006,17 @@
       burstAt(gift, { n: 26, dist: 260, size: 34 });
       confettiRain();
       setTimeout(() => {
-        reveal.hidden = false;
         gift.classList.add('gone');
+        sticker.hidden = false;
+        reveal.hidden = false;
         Voice.seq([PHRASES.rewardPrefix, s.prize[1]]);
-        const st = reveal.querySelector('.sticker');
-        burstAt(st, { set: ['✨', '⭐', '💖'], n: 12 });
+        burstAt(sticker, { set: ['✨', '⭐', '💖'], n: 12 });
       }, 650);
     });
     quizEl.addEventListener('click', (e) => {
       if (e.target.closest('button')) return;
       Sfx.pop();
-      burst(e.clientX, e.clientY, { n: 9, dist: 110, set: ['❤️', '💖', '💗', '⭐'] });
+      burst(e.clientX, e.clientY, { n: 9, dist: 110, set: ['❤️', '💖', '👍', '⭐'] });
     });
   }
 
@@ -877,6 +1041,13 @@
       h('h3', null, '爱心奖章'),
       h('div', { class: 'medals' }, MEDALS.map(([n, e, name]) => h('div', { class: 'medal' + (progress.hearts >= n ? ' got' : '') },
         h('span', { class: 'stk-e' }, e), h('span', null, name), h('small', null, `${n} 颗爱心`)))),
+      allPhotos().length || KID.video ? [
+        h('h3', null, `${KID.name}的照片`),
+        h('p', { class: 'sheet-sub' }, `点一点照片，给${KID.name}点个赞！`),
+        h('div', { class: 'album' },
+          KID.video ? photoCard({ video: KID.video, poster: KID.poster, small: true }) : null,
+          allPhotos().map((src) => photoCard({ src, small: true }))),
+      ] : null,
     ]);
   }
 
@@ -943,7 +1114,8 @@
         sel.addEventListener('change', () => { settings.voice = sel.value; save(); applySettings(); Speech.speak('你好，我们来读故事。'); });
         return sel;
       };
-      body.append(
+      // 空的一行（null）不放进去，不然会显示成文字 "null"
+      body.append(...[
         row('声音', h('div', { class: 'snd' },
           h('button', { class: 'btn tiny', type: 'button', onclick: test }, icon(I.speaker), '听一听'),
           status),
@@ -954,6 +1126,28 @@
         voices.length
           ? row('设备语音', h('div', { class: 'voice-pick' }, pick()), '只在没有录音的话上用到')
           : Voice.clips ? null : row('设备语音', h('p', { class: 'warn' }, '没有找到中文语音。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音。')),
+        row(`${KID.name}的照片`, (() => {
+          const input = h('input', { type: 'file', accept: 'image/*', multiple: true, id: 'set-photos', class: 'sr-only' });
+          input.addEventListener('change', () => {
+            const files = [...(input.files || [])].slice(0, 12);
+            if (!files.length) return;
+            toast('正在加照片……');
+            Promise.all(files.map((f, k) => fileToPhoto(f).then((data) => PhotoDB.put({ id: Date.now() + k, data })).then(() => 1, () => 0)))
+              .then((ok) => loadUserPhotos().then(() => ok.reduce((a, b) => a + b, 0)))
+              .then((n) => {
+                draw();
+                toast(n ? `加好了 ${n} 张照片` : '照片没加上：这个浏览器不让存照片');
+                if (view === 'map') renderMap();
+              });
+          });
+          return h('div', { class: 'photo-set' },
+            h('div', { class: 'thumbs' },
+              (KID.photos || []).map((src) => h('span', { class: 'thumb' }, h('img', { src, alt: '' }))),
+              userPhotos.map((p) => h('span', { class: 'thumb' }, h('img', { src: p.data, alt: '' }),
+                h('button', { class: 'thumb-x', type: 'button', 'aria-label': '删掉这张照片', html: I.close,
+                  onclick: () => PhotoDB.del(p.id).then(loadUserPhotos).then(() => { draw(); if (view === 'map') renderMap(); }) })))),
+            h('label', { class: 'btn tiny', for: 'set-photos' }, '添加照片'), input);
+        })(), '读完一关会跳出来，还能点赞。照片只存在这台设备上。'),
         row('关卡', sw('set-unlock', progress.unlockAll, (v) => {
           progress.unlockAll = v;
           save();
@@ -963,10 +1157,11 @@
         row('重新开始', confirming
           ? h('div', { class: 'confirm' },
               h('span', null, '清空爱心、贴纸和关卡进度？'),
-              h('button', { class: 'btn tiny danger', type: 'button', onclick: () => { progress.done = {}; progress.hearts = 0; progress.unlockAll = false; save(); closeModal(); renderMap(); toast('已经重新开始'); } }, '清空'),
+              h('button', { class: 'btn tiny danger', type: 'button', onclick: () => { progress.done = {}; progress.hearts = 0; progress.likes = 0; progress.unlockAll = false; save(); closeModal(); renderMap(); toast('已经重新开始'); } }, '清空'),
               h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { confirming = false; draw(); } }, '不清空'))
           : h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { confirming = true; draw(); } }, '清空进度')),
-        h('p', { class: 'credit' }, '故事字体：霞鹜文楷 GB（SIL OFL 1.1）。进度只存在这台设备的浏览器里。'));
+        h('p', { class: 'credit' }, '故事字体：霞鹜文楷 GB（SIL OFL 1.1）。进度只存在这台设备的浏览器里。'),
+      ].filter(Boolean));
     }
     draw();
     Speech.onVoices(() => { if (box.isConnected) draw(); });
@@ -982,6 +1177,7 @@
     });
   });
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && currentModal) { closeModal(); return; }
     if (view !== 'reader' || !R || quizEl) return;
     if (e.key === 'ArrowRight') go(1);
     else if (e.key === 'ArrowLeft') go(-1);
@@ -1003,6 +1199,7 @@
     hot.snapshot(() => ({ view, story: R ? R.i : null, page: R ? R.page : null }));
   }
   function start(data) {
+    loadUserPhotos().then(() => { if (view === 'map' && userPhotos.length) renderMap(); });
     renderMap();
     if (data && data.view === 'reader' && data.story != null && STORIES[data.story]) openReader(data.story, data.page || 0);
   }

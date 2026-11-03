@@ -38,5 +38,7 @@ add(PHRASES.quizAgain, null, 'phrase');
 PHRASES.praise.forEach((w) => add(w, null, 'phrase'));
 add(PHRASES.rewardPrefix, null, 'phrase');
 add(PHRASES.hello, null, 'phrase');
+(PHRASES.cheers || []).forEach((w) => add(w, null, 'phrase'));
+add(PHRASES.stageDone, null, 'phrase');
 
 process.stdout.write(JSON.stringify([...items.values()], null, 1));

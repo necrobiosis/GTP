@@ -34,9 +34,9 @@ ROOT = Path(__file__).resolve().parent.parent
 AUDIO_DIR = ROOT / "audio"
 INDEX_FILE = ROOT / "js" / "audio-index.js"
 DEFAULT_MODELS = ROOT / "tools" / ".cache" / "kokoro"
-VOICE = "zf_003"
-REF_F0 = 216  # 这个声音说话时的平均音高（Hz），用来判断声调
-SPEED = {"char": 0.8, "word": 0.85, "phrase": 0.9, "title": 0.85, "page": 0.88}
+VOICE = "zf_084"  # 50 个女声里节奏最自然、识别也准的一个（见 README）
+REF_F0 = 277  # 这个声音说话时的平均音高（Hz），用来判断声调
+SPEED = {"char": 0.85, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1}
 TONES = set("12345")
 HAN = re.compile(r"[㐀-鿿]")
 
@@ -54,7 +54,7 @@ def load_items():
 
 
 def clip_id(say, kind):
-    recipe = "" if kind == "char" else "|carrier"
+    recipe = "" if kind == "char" else "|carrier2"
     return hashlib.sha1(f"{VOICE}|{SPEED[kind]}|{say}{recipe}".encode("utf-8")).hexdigest()[:10]
 
 
@@ -229,11 +229,13 @@ def make_single(kokoro, phonemes, speed, ref):
 
 
 def make_line(kokoro, g2p, phonemes, speed):
-    """句子和词：前后各加一句「好。」一起念，再在真正的停顿处剪掉，
-    这样开头和结尾不会多出杂音（很短的词尤其容易多出一个「衣」的音）。"""
-    carrier, _ = g2p("好。")
+    """句子和词：前面加一句「好。」、后面加一句「对。」一起念，再在真正的停顿处剪掉，
+    这样开头和结尾不会多出杂音（很短的词尤其容易多出一个「衣」的音）。
+    后面用「对」：d 开头前面有一小段完全安静，好剪；用「好」的话 h 和句子连在一起，结尾会带出一点「要」「以」的音。"""
+    head, _ = g2p("好。")
+    tail, _ = g2p("对。")
     body = phonemes if phonemes.rstrip()[-1:] in ".!?" else phonemes + "."
-    audio, sr, timings = kokoro.create_timed(f"{carrier} {body} {carrier}", voice=VOICE, speed=speed, is_phonemes=True)
+    audio, sr, timings = kokoro.create_timed(f"{head} {body} {tail}", voice=VOICE, speed=speed, is_phonemes=True)
     audio = np.asarray(audio, dtype=np.float32)
     spans = syllable_spans(timings)
     starts = char_starts(timings)

@@ -41,7 +41,8 @@ STORIES.forEach((s, i) => {
     `${String(i + 1).padStart(2)}  ${s.title.padEnd(8, '　')}  ${String(s.pages.length).padStart(2)}  ${String(textChars).padStart(4)}  ${String(longest).padStart(6)}    ` +
     (extra.length ? `${extra.join('')}${fresh.length ? `（第一次出现：${fresh.join('')}）` : ''}` : '—'),
   );
-  if (fresh.length > 3) problems.push(`第${i + 1}关「${s.title}」一下出现 ${fresh.length} 个新字`);
+  const limit = s.stage >= 5 ? 7 : 3; // 第五、六站专门多学新字
+  if (fresh.length > limit) problems.push(`第${i + 1}关「${s.title}」一下出现 ${fresh.length} 个新字`);
   s.pages.forEach((p, k) => {
     if (!Scenes.PRESETS[p.scene]) problems.push(`第${i + 1}关第${k + 1}页：没有这个背景 ${p.scene}`);
     (p.art || []).forEach((a) => {

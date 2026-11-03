@@ -29,6 +29,11 @@ window.Scenes = (function () {
     soil:       { sky: 'day', sun: 'day', clouds: 2, ground: 'soil' },
     party:      { sky: 'party', clouds: 2, far: 'hills', ground: 'grass', bunting: 1, confetti: 1 },
     partybow:   { sky: 'party', clouds: 2, far: 'hills', ground: 'grass', bunting: 1, rainbow: 1 },
+    sea:        { sky: 'day', sun: 'day', clouds: 3, ground: 'beach' },
+    seadusk:    { sky: 'dusk', sun: 'set', clouds: 2, cloud: 'pink', ground: 'beach-dusk' },
+    snow:       { sky: 'winter', clouds: 3, cloud: 'grey', far: 'hills-snow', ground: 'snowfield', weather: 'snow' },
+    snowsun:    { sky: 'day', sun: 'day', clouds: 2, far: 'hills-snow', ground: 'snowfield' },
+    dawnplain:  { sky: 'dawn', clouds: 2, far: 'hills', ground: 'grass' },
   };
 
   // 固定种子的随机数：同一个背景每次画出来都一样
@@ -91,6 +96,15 @@ window.Scenes = (function () {
     return h + '</div>';
   }
 
+  function snow(r) {
+    let h = '<div class="snowfall">';
+    for (let i = 0; i < 40; i++) {
+      const x = r() * 100, d = -r() * 8, t = 5 + r() * 5, sz = 4 + r() * 7;
+      h += `<i class="sn" style="left:${x.toFixed(1)}%;--z:${sz.toFixed(0)}px;animation-duration:${t.toFixed(1)}s;animation-delay:${d.toFixed(1)}s"></i>`;
+    }
+    return h + '</div>';
+  }
+
   function puddles() {
     return '<div class="puddles"><i class="pd" style="left:12%;--dy:.12;--w:22"></i><i class="pd" style="left:70%;--dy:.2;--w:28"></i><i class="pd" style="left:44%;--dy:.27;--w:18"></i></div>';
   }
@@ -131,6 +145,7 @@ window.Scenes = (function () {
     if (p.weather === 'rain' || p.weather === 'storm') h += rain(p.weather === 'storm' ? 70 : 46, r);
     if (p.weather === 'storm') h += '<div class="flash"></div>';
     if (p.weather === 'leaves') h += leaves(r);
+    if (p.weather === 'snow') h += snow(r);
     el.innerHTML = h;
     return el;
   }
@@ -168,6 +183,26 @@ window.Scenes = (function () {
         return '<div class="pr pr-log"><i class="end"></i></div>';
       case 'nest':
         return '<div class="pr pr-nest"><i class="egg"></i></div>';
+      case 'kid': {
+        // 可可：有照片就用照片做的圆头像，没有就是一个写着名字的圆牌
+        const kid = window.KID || {};
+        const name = String(kid.name || '可可').replace(/[<>&"]/g, '');
+        return kid.avatar
+          ? `<div class="pr pr-kid"><img src="${kid.avatar}" alt="" draggable="false"></div>`
+          : `<div class="pr pr-kid kid-name"><span style="font-size:${Math.min(0.36, 0.74 / Math.max(1, [...name].length)).toFixed(3)}em">${name}</span></div>`;
+      }
+      case 'paper': {
+        // 可可的画：draw 里写画了哪些东西
+        const d = ' ' + (o.draw || '') + ' ';
+        let h = '<div class="pr pr-paper"><i class="sheet"></i>';
+        if (d.includes(' sun ')) h += '<i class="d-sun"></i>';
+        if (d.includes(' mt ')) h += '<i class="d-mt"></i>';
+        if (d.includes(' river ')) h += '<i class="d-river"></i><i class="d-fish"></i>';
+        if (d.includes(' grass ')) h += '<i class="d-grass"></i>';
+        if (d.includes(' flower ')) h += '<i class="d-flower"></i><i class="d-bug"></i>';
+        if (d.includes(' dog ')) h += '<i class="d-dog">🐶</i>';
+        return h + '</div>';
+      }
       case 'flower':
         return '<div class="pr pr-flower"><i class="stem"></i><i class="leaf l"></i><i class="leaf r"></i><i class="head"><i class="face"><i class="eye l"></i><i class="eye r"></i><i class="mouth"></i></i></i></div>';
       default:
