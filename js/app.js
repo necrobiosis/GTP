@@ -533,6 +533,23 @@
 
   /* ======================= 读故事 ======================= */
   let probe = null;
+  // 有的托管网站会在右下角放自己的小标签（比如 Netlify 免费版的「Powered by Netlify」），
+  // 盖住翻页按钮。发现了就在底下留出一条，不去动它。
+  let hostBadge = 0;
+  function watchHostBadge() {
+    const found = () => document.getElementById('nl-badge-frame');
+    const apply = () => {
+      hostBadge = 56;
+      document.documentElement.style.setProperty('--hb', hostBadge + 'px');
+      document.body.classList.add('host-badge');
+      if (view === 'reader' && R) { layout(); fitText(); }
+    };
+    if (found()) { apply(); return; }
+    const mo = new MutationObserver(() => { if (found()) { mo.disconnect(); apply(); } });
+    mo.observe(document.body, { childList: true });
+    setTimeout(() => mo.disconnect(), 20000);
+  }
+
   function safeArea() {
     if (!probe) {
       probe = h('div', { class: 'sa-probe', 'aria-hidden': 'true' });
@@ -599,7 +616,7 @@
     if (!R) return;
     const pg = R.s.pages[R.page];
     const W = window.innerWidth;
-    const H = window.innerHeight;
+    const H = window.innerHeight - hostBadge; // 底下留出托管网站自己的小标签
     const sa = safeArea();
     const narrow = W < 700 || W / H < 0.8;
     const n = hanOf(pg.text).length;
@@ -1361,6 +1378,7 @@
     hot.snapshot(() => ({ view, story: R ? R.i : null, page: R ? R.page : null }));
   }
   function start(data) {
+    watchHostBadge();
     loadUserPhotos().then(() => { if (view === 'map' && userPhotos.length) renderMap(); });
     renderMap();
     if (data && data.view === 'reader' && data.story != null && STORIES[data.story]) openReader(data.story, data.page || 0);

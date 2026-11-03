@@ -81,6 +81,13 @@
 - 改了故事或录音以后：先推送到 GitHub，再把 `public/app.html` 里的提交号换成新的（可以让 Lovable 的 AI 改，也可以在 Lovable 编辑器里改），然后点 Publish。
 - 每个网址各存各的：在 Lovable 网址上读到第几关、得了多少爱心、加了哪些照片，和 claude.ai 链接里的不通用。
 
+## 公开网址（Netlify）
+
+- **https://shizi-gushiwu.netlify.app** ：和 Lovable 上的一样，任何人都能打开，**没有可可的照片**。这里放的是网页文件本身（不经过 jsDelivr）。
+- 更新：`node tools/build-site.mjs` 把网页文件复制到 `dist/site/`（不带 `media/`），再 `netlify deploy --prod --dir dist/site`。
+- Netlify 免费版会在右下角加一个「Powered by Netlify」小标签。网页发现它以后，会把下面的字卡往上挪，免得盖住翻页按钮；小标签本身不去动它。想去掉，要在 Netlify 换付费版。
+- 新建的网站默认要登录 Netlify 才能看；现在设成了只有预览版要登录，正式网址谁都能打开。
+
 ## 可可的照片（不进 git）
 
 这个仓库是公开的，所以**孩子的照片和视频没有放进仓库**：

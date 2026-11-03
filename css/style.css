@@ -127,7 +127,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 /* ================= 地图 ================= */
 .map {
   min-height: 100%;
-  padding-block: 18px 64px;
+  padding-block: 18px calc(64px + var(--hb, 0px));
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   background:
@@ -244,7 +244,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 .modal-back {
   position: fixed; inset: 0; z-index: 50;
   display: grid; place-items: center;
-  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(max(16px, env(safe-area-inset-bottom, 0px)) + var(--hb, 0px)) max(16px, env(safe-area-inset-left, 0px));
   background: rgba(23, 50, 82, .45);
   opacity: 0; transition: opacity .22s;
 }
@@ -343,7 +343,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 
 /* 字卡 */
 .card {
-  position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; height: var(--card-h);
+  position: absolute; z-index: 4; left: 0; right: 0; bottom: var(--hb, 0px); height: var(--card-h);
   padding: 6px max(12px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; justify-content: center;
 }
@@ -931,7 +931,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 .quiz, .reward {
   position: fixed; inset: 0; z-index: 40;
   display: flex; flex-direction: column; align-items: center; overflow: hidden;
-  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 18px) max(16px, env(safe-area-inset-left, 0px));
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 18px + var(--hb, 0px)) max(16px, env(safe-area-inset-left, 0px));
   background: radial-gradient(circle at 50% 42%, #fff8dd, #ffe3bd 60%, #ffcd9e);
   animation: fadein .3s ease; -webkit-user-select: none; user-select: none;
 }
@@ -1077,7 +1077,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 .ptc { position: absolute; line-height: 1; will-change: transform, opacity; }
 .cfx { position: absolute; top: 0; width: 12px; height: 16px; border-radius: 3px; }
 .toast {
-  position: fixed; z-index: 95; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  position: fixed; z-index: 95; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px) + var(--hb, 0px));
   max-width: calc(100vw - 32px); padding: 12px 22px; border-radius: 999px;
   background: var(--navy); color: #fff; font: 18px/1.4 var(--font-display); text-align: center;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
