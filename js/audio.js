@@ -147,8 +147,23 @@ window.Voice = (function () {
     return blobs[id];
   }
   let useBlob = false;
+  // 放在网上的录音：快要用到的先下载到内存里（prefetch），点的时候马上能放，不用等网络
+  const fetched = {};
+  function prefetch(texts) {
+    if (DATA || typeof fetch !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return;
+    (texts || []).forEach((t) => {
+      const e = INDEX[t];
+      if (!e || fetched[e[0]] !== undefined) return;
+      const id = e[0];
+      fetched[id] = '';
+      fetch(BASE + id + '.mp3')
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((b) => { if (b && b.size) fetched[id] = URL.createObjectURL(b); else delete fetched[id]; })
+        .catch(() => { delete fetched[id]; });
+    });
+  }
   const srcOf = (id) => {
-    if (!(DATA && DATA[id])) return BASE + id + '.mp3';
+    if (!(DATA && DATA[id])) return fetched[id] || BASE + id + '.mp3';
     return useBlob ? blobOf(id) : 'data:audio/mpeg;base64,' + DATA[id];
   };
   const fixText = (t) => FIX.reduce((s, [re, to]) => s.replace(re, to), t);
@@ -265,6 +280,7 @@ window.Voice = (function () {
     seq,
     stop,
     unlock,
+    prefetch,
     has: (t) => !!INDEX[t],
     entry: (t) => INDEX[t] || null,
     time: () => (el ? el.currentTime : 0),

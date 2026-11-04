@@ -27,7 +27,7 @@ PUNCT = "，。！？、：；“”‘’（）《》……—·0123456789"
 
 def collect_chars() -> str:
     text = ""
-    for name in ("chars.js", "stories.js"):
+    for name in ("chars.js", "stories.js", "hanzi.js"):
         text += (ROOT / "js" / name).read_text(encoding="utf-8")
     han = set(re.findall(r"[㐀-鿿]", text))
     return "".join(sorted(han)) + EXTRA + PUNCT

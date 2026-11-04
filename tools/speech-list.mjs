@@ -11,10 +11,10 @@ import vm from 'node:vm';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ctx = { window: {} };
 vm.createContext(ctx);
-for (const f of ['js/chars.js', 'js/stories.js', 'js/phrases.js']) {
+for (const f of ['js/chars.js', 'js/stories.js', 'js/phrases.js', 'js/hanzi.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), ctx, { filename: f });
 }
-const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS } = ctx.window;
+const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS, HANZI_INTRO = {} } = ctx.window;
 const fix = (s) => SAY_FIX.reduce((acc, [re, to]) => acc.replace(re, to), s);
 const isHan = (c) => /\p{Script=Han}/u.test(c);
 const items = new Map();
@@ -31,7 +31,15 @@ STORIES.forEach((s) => {
   });
   [...s.title].forEach((c) => { if (isHan(c) && !chars.includes(c)) chars.push(c); });
 });
+// 认生字用到的字（有的还不在故事里）
+Object.keys(HANZI_INTRO).forEach((c) => { if (!chars.includes(c)) chars.push(c); });
 chars.forEach((c) => add(c, SAY_ALONE[c] || c, 'char'));
+// 认生字：每个字的讲解、例词
+Object.values(HANZI_INTRO).forEach((d) => {
+  add(d.say, null, 'phrase');
+  (d.words || []).forEach((w) => add(w, w, 'word'));
+  if (d.hear) add(d.hear, d.hear, 'word');
+});
 Object.values(PIC_WORDS).forEach((w) => add(w, w, 'word'));
 // js/phrases.js 里所有固定的话（表扬、求助的提示……）
 Object.values(PHRASES).flat().forEach((w) => add(w, null, 'phrase'));

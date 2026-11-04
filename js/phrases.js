@@ -19,6 +19,8 @@ window.PHRASES = {
   helpAskFree: '要求助吗？',
   helpPick: '点一点，你不会读的那个字。',
   helpHint: '不会读？点举手的按钮求助。',
+  // 读故事之前认生字
+  introHello: '先来认识几个生字吧！',
 };
 
 window.PIC_WORDS = {

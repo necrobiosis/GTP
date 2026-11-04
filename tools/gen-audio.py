@@ -40,6 +40,10 @@ VOICE = "zf_084"
 CHAR_VOICE = "zf_003"
 REF_F0 = {"zf_084": 277, "zf_003": 216}  # 声音说话时的平均音高（Hz），用来判断声调
 SPEED = {"char": 0.8, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1}
+# 单个字：稍微拉长、收尾圆一点、码率高一点，听起来饱满（录法有变化时改 CHAR_RECIPE，单字会全部重录）
+CHAR_TEMPO = 0.88
+CHAR_KBPS = 64
+CHAR_RECIPE = f"|full{CHAR_TEMPO}"
 TONES = set("12345")
 HAN = re.compile(r"[㐀-鿿]")
 
@@ -60,8 +64,30 @@ def voice_for(kind):
     return CHAR_VOICE if kind == "char" else VOICE
 
 
-def clip_id(say, kind):
-    recipe = "" if kind == "char" else "|carrier2"
+# 拼音转换把叠字名字的第二个字念成轻声：可可 → kě ke，第二个字跟在三声后面会念得很高，听起来像 kě kē。
+# 按平常说话的样子改回来：两个三声连着念，前一个变成二声（ké kě）。
+PHONE_FIX = [
+    ("ㄎㄜ3ㄎㄜ5", "ㄎㄜ2ㄎㄜ3"),          # 可可
+    ("ㄆㄠ3ㄆㄠ5", "ㄆㄠ2ㄆㄠ3"),          # 跑跑（小狗的名字）
+    ("ㄆㄠ3ㄆㄠ3", "ㄆㄠ2ㄆㄠ3"),
+    ("ㄒ要3ㄒ要5ㄋ要3", "ㄒ要2ㄒ要2ㄋ要3"),  # 小小鸟
+    ("ㄒ要3ㄒ要5/ㄋ要3", "ㄒ要2ㄒ要2/ㄋ要3"),
+    ("ㄒ要3ㄒ要5", "ㄒ要2ㄒ要3"),          # 小小的
+    ("王1王5", "王1王1"),                  # 汪汪
+    ("ㄉㄞ4王2", "ㄉㄚ4王2"),              # 大王：dà wáng，不是戏里的 dài wang
+]
+
+
+def phone_fix(ph):
+    for a, b in PHONE_FIX:
+        ph = ph.replace(a, b)
+    return ph
+
+
+def clip_id(say, kind, fixed=False):
+    recipe = CHAR_RECIPE if kind == "char" else "|carrier2"
+    if fixed:
+        recipe += "|pfix1"  # 改过拼音的句子要重新录
     return hashlib.sha1(f"{voice_for(kind)}|{SPEED[kind]}|{say}{recipe}".encode("utf-8")).hexdigest()[:10]
 
 
@@ -282,11 +308,38 @@ def polish(audio, sr):
     return a.astype(np.float32), lead - s0 / sr
 
 
-def encode_mp3(a, sr, path):
+def encode_mp3(a, sr, path, kbps=32):
     subprocess.run(
         ["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "-",
-         "-codec:a", "libmp3lame", "-b:a", "32k", str(path)],
+         "-codec:a", "libmp3lame", "-b:a", f"{kbps}k", str(path)],
         input=a.tobytes(), check=True)
+
+
+def ffilter(a, sr, chain):
+    """用 ffmpeg 的滤镜处理一段音频（float32 单声道）。"""
+    out = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "-", "-af", chain,
+         "-f", "f32le", "-ac", "1", "-ar", str(sr), "-"],
+        input=np.asarray(a, np.float32).tobytes(), capture_output=True, check=True).stdout
+    return np.frombuffer(out, np.float32).copy()
+
+
+def fuller(audio, sr):
+    """单个字念得饱满一点：稍微拉长（不变调）、低音厚一点、去掉一点刺耳的高音。"""
+    chain = "lowshelf=g=2:f=180,equalizer=f=3500:t=q:w=1:g=-1.5"
+    if CHAR_TEMPO != 1:
+        chain = f"rubberband=tempo={CHAR_TEMPO}:window=short:transients=mixed," + chain
+    return ffilter(audio, sr, chain)
+
+
+def round_tail(a, sr, lead=0.05, tail=0.12):
+    """收尾圆一点：声音最后 60 毫秒慢慢收掉，不要一下子断掉（polish 之后用）。"""
+    end = len(a) - int(tail * sr)
+    n = int(0.06 * sr)
+    if end - n > int(lead * sr):
+        a = a.copy()
+        a[end - n:end] *= (0.5 + 0.5 * np.cos(np.linspace(0, np.pi, n))).astype(np.float32)
+    return a
 
 
 def decode(path, sr=16000):
@@ -326,7 +379,7 @@ def main():
 
     if args.g2p:
         for it in items:
-            ph, _ = g2p(it["say"])
+            ph = phone_fix(g2p(it["say"])[0])
             print(it["key"], "→", " ".join(to_pinyin(s, t) for s, t in syllables(ph)))
         return
 
@@ -338,14 +391,16 @@ def main():
     index, made, warn = {}, 0, []
     for it in items:
         key, say, kind = it["key"], it["say"], it["kind"]
-        cid = clip_id(say, kind)
+        ph0, _ = g2p(say)
+        ph = phone_fix(ph0)
+        cid = clip_id(say, kind, ph != ph0)
         path = AUDIO_DIR / f"{cid}.mp3"
         if not args.force and path.exists() and key in old and old[key][0] == cid:
             index[key] = old[key]
             continue
-        ph, _ = g2p(say)
         if kind == "char":
             audio, sr, method, ok = make_single(kokoro, ph, SPEED[kind], REF_F0[CHAR_VOICE])
+            audio = fuller(audio, sr)
             starts = []
             if not ok:
                 warn.append(f"「{key}」的声调形状不太对，请听一下（用的是{method}）")
@@ -353,7 +408,9 @@ def main():
             audio, sr, starts = make_line(kokoro, g2p, ph, SPEED[kind])
         a, shift = polish(audio, sr)
         shift -= 0.05  # 模型报的时间一般晚一点，高亮提前 0.05 秒
-        encode_mp3(a, sr, path)
+        if kind == "char":
+            a = round_tail(a, sr)
+        encode_mp3(a, sr, path, CHAR_KBPS if kind == "char" else 32)
         entry = [cid, round(len(a) / sr, 2)]
         n_han = len(HAN.findall(key))
         if kind in ("page", "title") and n_han > 1:
