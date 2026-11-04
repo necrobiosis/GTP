@@ -34,6 +34,8 @@
   --teal-deep: #11879b;
   --sea: #3d8bff;
   --sea-deep: #1f5fcf;
+  --coral: #ff7a59;
+  --coral-deep: #d9502f;
   --stone: #c3c9d2;
   --navy: #174a7c;
   --font-display: "ZCOOL KuaiLe", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -65,6 +67,7 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 .st-4 { --sc: var(--violet); --sc-deep: var(--violet-deep); }
 .st-5 { --sc: var(--teal); --sc-deep: var(--teal-deep); }
 .st-6 { --sc: var(--sea); --sc-deep: var(--sea-deep); }
+.st-7 { --sc: var(--coral); --sc-deep: var(--coral-deep); }
 
 /* ================= 按钮 ================= */
 .btn {
@@ -1506,3 +1509,12 @@ label.btn { cursor: pointer; }
 .sz.got { opacity: .55; }
 .sz .ok { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--mint); color: #fff; }
 .sz .ok svg { width: 16px; height: 16px; }
+
+/* 同学：写着名字的圆牌（小爱、点点） */
+.pr-badge {
+  display: grid; place-items: center; aspect-ratio: 1; border-radius: 50%;
+  background: var(--bg);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--bg) 55%, #fff), var(--bg) 72%);
+  box-shadow: 0 0 0 .045em #fff, 0 .03em .08em rgba(0, 0, 0, .28);
+}
+.pr-badge span { font-family: var(--font-kai); line-height: 1; color: #fff; letter-spacing: .02em; text-shadow: 0 .03em 0 rgba(0, 0, 0, .25); white-space: nowrap; }

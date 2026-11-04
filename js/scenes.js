@@ -191,6 +191,12 @@ window.Scenes = (function () {
           ? `<div class="pr pr-kid"><img src="${kid.avatar}" alt="" draggable="false"></div>`
           : `<div class="pr pr-kid kid-name"><span style="font-size:${Math.min(0.36, 0.74 / Math.max(1, [...name].length)).toFixed(3)}em">${name}</span></div>`;
       }
+      case 'badge': {
+        // 同学（小爱、点点……）：写着名字的圆牌，o.bg 是底色
+        const name = String(o.name || '').replace(/[<>&"]/g, '');
+        const bg = /^#[0-9a-f]{3,8}$/i.test(o.bg || '') ? o.bg : '#ff7eb3';
+        return `<div class="pr pr-badge" style="--bg:${bg}"><span style="font-size:${Math.min(0.36, 0.74 / Math.max(1, [...name].length)).toFixed(3)}em">${name}</span></div>`;
+      }
       case 'paper': {
         // 可可的画：draw 里写画了哪些东西
         const d = ' ' + (o.draw || '') + ' ';

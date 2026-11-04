@@ -25,10 +25,11 @@
     { name: '第四站 · 果子', note: '一页一段话，最后一个故事一口气读完' },
     { name: '第五站 · 小河', note: '可可来了！每个故事学几个新字' },
     { name: '第六站 · 大海', note: '新字更多，可可会读书了' },
+    { name: '第七站 · 好朋友', note: '可可的同学小爱、点点来了！' },
   ];
   const MEDALS = [[10, '🥉', '铜牌'], [30, '🥈', '银牌'], [60, '🥇', '金牌'], [100, '👑', '皇冠']];
   // 每关能得的爱心（自己读完全都拿到；求助一次用掉一颗），越往后越多
-  const LEVEL_HEARTS = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 5, 6: 5 };
+  const LEVEL_HEARTS = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 5, 6: 5, 7: 5 };
 
   // 故事里出现、但还没学过的字（按第一次出现的顺序）
   const EXTRA = [];
@@ -651,7 +652,7 @@
   function fitText() {
     if (!R) return;
     const t = R.text;
-    const cap = { 1: 116, 2: 98, 3: 86, 4: 74, 5: 80, 6: 76 }[R.s.stage] || 74;
+    const cap = { 1: 116, 2: 98, 3: 86, 4: 74, 5: 80, 6: 76, 7: 80 }[R.s.stage] || 74;
     let lo = 18;
     let hi = Math.max(lo + 1, Math.min(cap, t.clientHeight / 1.2, t.clientWidth / 2.4));
     for (let k = 0; k < 9; k++) {
