@@ -39,7 +39,7 @@ VOICE = "zf_084"
 # 点一个字时念的单字：zf_003，单念时字音更清楚、也长一点（语音识别核对 106 个字：zf_003 对 72 个，zf_084 对 49–60 个）
 CHAR_VOICE = "zf_003"
 REF_F0 = {"zf_084": 277, "zf_003": 216}  # 声音说话时的平均音高（Hz），用来判断声调
-SPEED = {"char": 0.8, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1}
+SPEED = {"char": 0.8, "word": 1.0, "phrase": 1.0, "title": 1.0, "page": 1.1, "teach": 0.8}  # teach：认生字时老师讲，慢一点
 # 单个字：稍微拉长、收尾圆一点、码率高一点，听起来饱满（录法有变化时改 CHAR_RECIPE，单字会全部重录）
 CHAR_TEMPO = 0.88
 CHAR_KBPS = 64
@@ -75,19 +75,32 @@ PHONE_FIX = [
     ("ㄒ要3ㄒ要5", "ㄒ要2ㄒ要3"),          # 小小的
     ("王1王5", "王1王1"),                  # 汪汪
     ("ㄉㄞ4王2", "ㄉㄚ4王2"),              # 大王：dà wáng，不是戏里的 dài wang
+    # 第三个数是「第几批」改法：句子用上了新一批的改法，录音文件名跟着变，就会重新录
+    ("ㄉ言3ㄉ言5", "ㄉ言2ㄉ言3", 2),        # 点点（同学的名字）：跟可可一样，diándiǎn
+    ("ㄒ要3ㄞ4ㄞ5", "ㄒ要3ㄞ4/ㄞ4", 2),     # 小爱爱画画：两个「爱」分开念，不要连成一个
+    ("ㄘㄠ3ㄉㄧ5", "ㄘㄠ3ㄉㄧ4", 2),        # 草地：cǎo dì
+    ("ㄊㄨ3ㄉㄧ5", "ㄊㄨ3ㄉㄧ4", 2),        # 土地：tǔ dì
+    ("ㄕ十2/ㄧ4ㄅㄧ3", "ㄕ十2ㄧ1/ㄅㄧ3", 2),  # 十一笔：shí yī bǐ，不是「十亿笔」
+    ("ㄉㄧ4ㄨ3ㄅㄧ3", "ㄉㄧ4ㄨ2ㄅㄧ3", 2),    # 第五笔：两个三声连着，前一个念二声
+    ("ㄉㄧ4ㄐ又3ㄅㄧ3", "ㄉㄧ4ㄐ又2ㄅㄧ3", 2),  # 第九笔
 ]
 
 
-def phone_fix(ph):
-    for a, b in PHONE_FIX:
-        ph = ph.replace(a, b)
-    return ph
+def phone_fix(ph, with_ver=False):
+    ver = 0
+    for a, b, *v in PHONE_FIX:
+        if a in ph:
+            ph = ph.replace(a, b)
+            ver = max(ver, v[0] if v else 1)
+    return (ph, ver) if with_ver else ph
 
 
-def clip_id(say, kind, fixed=False):
+def clip_id(say, kind, fixed=0):
     recipe = CHAR_RECIPE if kind == "char" else "|carrier2"
+    if kind == "teach":
+        recipe += TEACH_RECIPE
     if fixed:
-        recipe += "|pfix1"  # 改过拼音的句子要重新录
+        recipe += f"|pfix{int(fixed)}"  # 改过拼音的句子要重新录
     return hashlib.sha1(f"{voice_for(kind)}|{SPEED[kind]}|{say}{recipe}".encode("utf-8")).hexdigest()[:10]
 
 
@@ -280,6 +293,18 @@ def make_single(kokoro, phonemes, speed, ref, voice=CHAR_VOICE):
     return clip, sr, f"{name} {score:+.1f}", tone_ok(clip, sr, tone, ref)
 
 
+def tail_cut(env, sr, spans):
+    """在句子和后面那句「对。」中间剪。先找真正安静的一小段；「真棒！对。」有时连着念、中间没有停顿，
+    这时找到的安静地方在「对」后面，剪下来会多出一个「对」——所以剪的地方后面一定还要有「对」的声音，
+    没有就放宽一点再找。"""
+    top = env.max()
+    for rel, hold in ((0.06, 0.03), (0.15, 0.02), (0.25, 0.015)):
+        b = first_quiet(env, sr, spans[-2][1], spans[-1][2], rel, hold)
+        if b is not None and env[b:].max() > 0.25 * top:
+            return b
+    return quietest(env, sr, spans[-2][2] - 0.1, spans[-1][0] + 0.02)
+
+
 def make_line(kokoro, g2p, phonemes, speed):
     """句子和词：前面加一句「好。」、后面加一句「对。」一起念，再在真正的停顿处剪掉，
     这样开头和结尾不会多出杂音（很短的词尤其容易多出一个「衣」的音）。
@@ -295,15 +320,43 @@ def make_line(kokoro, g2p, phonemes, speed):
         return audio, sr, starts
     env = envelope(audio, sr)
     a = quietest(env, sr, spans[0][2] - 0.1, spans[1][0] + 0.02)
-    b = first_quiet(env, sr, spans[-2][1], spans[-1][2])
-    if b is None:
-        b = quietest(env, sr, spans[-2][2] - 0.1, spans[-1][0] + 0.02)
+    b = tail_cut(env, sr, spans)
     clip = audio[a:b].copy()
     n = min(len(clip) // 4, int(0.008 * sr))
     if n:
         clip[:n] *= np.linspace(0, 1, n, dtype=np.float32)
         clip[-n:] *= np.linspace(1, 0, n, dtype=np.float32)
     return clip, sr, [t - a / sr for t in starts[1:-1]]
+
+
+# 老师讲课：每个逗号、句号后面多停一会儿，一小句一小句说清楚（字音本身不拉长，听起来还是自然的）
+PAUSE_ADD, PAUSE_CAP, PAUSE_MIN = 0.7, 0.4, 0.09
+TEACH_RECIPE = f"|pause{PAUSE_ADD}-{PAUSE_CAP}"
+
+
+def stretch_pauses(a, sr):
+    """句子中间的停顿（至少 PAUSE_MIN 秒的安静）拉长 PAUSE_ADD 倍，每处最多多停 PAUSE_CAP 秒。"""
+    env = envelope(a, sr)
+    quiet = env < 0.04 * env.max()
+    edges = np.flatnonzero(np.diff(quiet.astype(np.int8)))
+    runs = []
+    starts = edges[quiet[edges + 1]] + 1 if len(edges) else []
+    for s0 in starts:
+        e = s0
+        nxt = edges[edges >= s0]
+        e = nxt[0] + 1 if len(nxt) else len(a)
+        if s0 > 0 and e < len(a) and (e - s0) >= PAUSE_MIN * sr:
+            runs.append((s0, e))
+    if not runs:
+        return a
+    out, last = [], 0
+    for s0, e in runs:
+        mid = s0 + int(np.argmin(env[s0:e]))
+        extra = int(min(PAUSE_CAP, PAUSE_ADD * (e - s0) / sr) * sr)
+        out += [a[last:mid], np.zeros(extra, np.float32)]
+        last = mid
+    out.append(a[last:])
+    return np.concatenate(out).astype(np.float32)
 
 
 def polish(audio, sr):
@@ -413,8 +466,8 @@ def main():
     for it in items:
         key, say, kind = it["key"], it["say"], it["kind"]
         ph0, _ = g2p(say)
-        ph = phone_fix(ph0)
-        cid = clip_id(say, kind, ph != ph0)
+        ph, fver = phone_fix(ph0, with_ver=True)
+        cid = clip_id(say, kind, fver)
         path = AUDIO_DIR / f"{cid}.mp3"
         if not args.force and path.exists() and key in old and old[key][0] == cid:
             index[key] = old[key]
@@ -427,6 +480,8 @@ def main():
                 warn.append(f"「{key}」的声调形状不太对，请听一下（用的是{method}）")
         else:
             audio, sr, starts = make_line(kokoro, g2p, ph, SPEED[kind])
+            if kind == "teach":
+                audio = stretch_pauses(audio, sr)
         a, shift = polish(audio, sr)
         shift -= 0.05  # 模型报的时间一般晚一点，高亮提前 0.05 秒
         if kind == "char":
