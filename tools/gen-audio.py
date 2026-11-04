@@ -217,6 +217,25 @@ def envelope(x, sr):
     return np.convolve(d, np.ones(f) / f, mode="same")
 
 
+def first_quiet(env, sr, t0, t1, rel=0.06, hold=0.03):
+    """从 t0 往后找第一段安静（低于最响的 rel，至少 hold 秒），在这段里最安静的地方剪。找不到返回 None。
+    句子后面那句「对。」的时间有时报得特别晚，用「最安静的点」会剪到「对」后面去。"""
+    i0, i1 = max(0, int(t0 * sr)), min(len(env), int(t1 * sr))
+    thr = rel * env.max()
+    need = max(1, int(hold * sr))
+    k = i0
+    while k < i1:
+        if env[k] < thr:
+            j = k
+            while j < i1 and env[j] < thr:
+                j += 1
+            if j - k >= need:
+                return k + int(np.argmin(env[k:j]))
+            k = j
+        k += 1
+    return None
+
+
 def quietest(env, sr, t0, t1):
     i0, i1 = max(0, int(t0 * sr)), min(len(env), int(t1 * sr))
     if i1 <= i0:
@@ -276,7 +295,9 @@ def make_line(kokoro, g2p, phonemes, speed):
         return audio, sr, starts
     env = envelope(audio, sr)
     a = quietest(env, sr, spans[0][2] - 0.1, spans[1][0] + 0.02)
-    b = quietest(env, sr, spans[-2][2] - 0.1, spans[-1][0] + 0.02)
+    b = first_quiet(env, sr, spans[-2][1], spans[-1][2])
+    if b is None:
+        b = quietest(env, sr, spans[-2][2] - 0.1, spans[-1][0] + 0.02)
     clip = audio[a:b].copy()
     n = min(len(clip) // 4, int(0.008 * sr))
     if n:

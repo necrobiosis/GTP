@@ -26,7 +26,11 @@ STORIES.forEach((s) => {
   add(s.prize[1], s.prize[1], 'word');
   s.pages.forEach((p) => {
     add(p.text, p.text, 'page');
-    (p.art || []).forEach((a) => { if (a[5] && a[5].say) add(a[5].say, a[5].say, 'word'); });
+    // 点图片念的词；只有一个字的按单字录（和点这个字一样）
+    (p.art || []).forEach((a) => {
+      const w = a[5] && a[5].say;
+      if (w) add(w, [...w].length === 1 ? SAY_ALONE[w] || w : w, [...w].length === 1 ? 'char' : 'word');
+    });
     [...p.text].forEach((c) => { if (isHan(c) && !chars.includes(c)) chars.push(c); });
   });
   [...s.title].forEach((c) => { if (isHan(c) && !chars.includes(c)) chars.push(c); });
