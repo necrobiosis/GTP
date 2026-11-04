@@ -1584,3 +1584,140 @@ label.btn { cursor: pointer; }
   .l-step .e { font-size: 18px; }
   .l-step:not(.on) span:not(.e) { display: none; }
 }
+
+/* ================= 地图：生字库按钮上的数字、读过一遍的小皇冠 ================= */
+.tool { position: relative; }
+.tool-n {
+  position: absolute; top: -7px; right: -7px; min-width: 25px; height: 25px; padding: 0 6px;
+  border-radius: 13px; background: var(--rose); color: #fff; font: normal 15px/25px var(--font-display);
+  box-shadow: 0 2px 0 var(--rose-deep);
+}
+.disc .crown { position: absolute; left: -10px; top: -14px; font-size: 32px; line-height: 1; transform: rotate(-16deg); filter: drop-shadow(0 2px 0 rgba(0, 0, 0, .15)); }
+
+/* ================= 读故事前：自己点不认识的字 ================= */
+.pk-stage { gap: 10px; }
+.pk-title { margin: 0; font: 400 clamp(28px, 5vmin, 42px)/1.2 var(--font-display); color: var(--ink); }
+.pk-sub { margin: 0 0 10px; font: clamp(18px, 3vmin, 24px) var(--font-display); color: var(--ink-soft); }
+.pk-grid { display: grid; grid-auto-flow: column; justify-content: center; gap: clamp(14px, 2.8vw, 28px); font-size: clamp(60px, 12vmin, 112px); }
+.pk-grid.n6, .pk-grid.n7, .pk-grid.n8 { font-size: clamp(56px, 10vmin, 96px); }
+@media (max-width: 700px) {
+  /* 手机竖着：一行最多三个 */
+  .pk-grid { grid-auto-flow: row; grid-template-columns: repeat(3, auto); font-size: clamp(64px, 19vw, 96px); }
+  .pk-grid.n4 { grid-template-columns: repeat(2, auto); }
+}
+.ch.pk { box-shadow: inset 0 0 0 .03em var(--grid), 0 .06em 0 #e2c9a0, 0 .1em .25em rgba(0, 0, 0, .1); }
+.ch.pk .pk-q {
+  position: absolute; right: -.16em; top: -.16em; width: .48em; height: .48em; border-radius: 50%;
+  display: grid; place-items: center; font: .34em/1 var(--font-display); color: #fff; background: var(--rose);
+  box-shadow: 0 .03em 0 var(--rose-deep); transform: scale(0); transition: transform .2s cubic-bezier(.3, 1.6, .6, 1);
+}
+.ch.pk.unk { --grid: #f59a8a; background-color: #ffe3ec; transform: translateY(-.04em); }
+.ch.pk.unk .pk-q { transform: scale(1); }
+
+/* ================= 复习：听一听，在十个字里找 ================= */
+.rv-dots { flex: none; display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; max-width: 46%; }
+.rv-dot { min-width: 26px; height: 26px; padding: 0 4px; border-radius: 13px; background: #ead7b4; font: 18px/26px var(--font-kai); color: #fff; text-align: center; }
+.rv-dot.ok { background: var(--mint); }
+.rv-stage { gap: 16px; }
+.rv-grid { display: grid; grid-template-columns: repeat(5, auto); gap: clamp(8px, 2vw, 18px); font-size: clamp(46px, 10vmin, 96px); }
+.rv-opt { box-shadow: inset 0 0 0 .03em var(--grid), 0 .06em 0 #e2c9a0, 0 .1em .25em rgba(0, 0, 0, .1); }
+.rv-opt.right { --grid: var(--mint); background-color: #d9f7e4; animation: rightpop .6s cubic-bezier(.3, 1.6, .6, 1); }
+.rv-opt.wrong { animation: wrongshake .45s; }
+.rv-opt.show { --grid: var(--sun); background-color: var(--sun-pale); animation: showme .9s ease-in-out 2; }
+@keyframes showme { 50% { transform: scale(1.16); } }
+.rv-done { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; font-size: clamp(48px, 9vmin, 80px); }
+.f-ear {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 20px 9px 14px; border: 0; border-radius: 999px;
+  background: #fff; color: var(--tangerine-deep); font: 21px var(--font-display); box-shadow: 0 4px 0 var(--paper-edge); cursor: pointer;
+}
+.f-ear .ic svg { width: 28px; height: 28px; }
+
+/* ================= 上课：读一读（小动物各念一个，挑念对的）、写一写（笔画名称）、找一找（五次） ================= */
+.l-read .l-ch { font-size: clamp(90px, 24vmin, 190px); }
+.snd-row { display: flex; gap: clamp(14px, 4vw, 34px); justify-content: center; }
+.snd-row[hidden] { display: none; }
+.snd-card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: clamp(90px, 20vmin, 150px); padding: 10px 6px 8px; border: 0; border-radius: 26px;
+  background: #fff; color: var(--tangerine-deep); box-shadow: 0 6px 0 var(--paper-edge); cursor: pointer;
+  transition: transform .2s, box-shadow .2s;
+}
+.snd-card .e { font-size: clamp(50px, 11vmin, 84px); line-height: 1.1; }
+.snd-card .ic svg { width: 26px; height: 26px; }
+.snd-card.on { transform: translateY(-6px) scale(1.06); box-shadow: 0 10px 0 #e9b800, 0 0 0 5px var(--sun); }
+.snd-card.right { background: #d9f7e4; box-shadow: 0 6px 0 var(--mint-deep), 0 0 0 5px var(--mint); animation: rightpop .6s cubic-bezier(.3, 1.6, .6, 1); }
+.snd-card.wrong { animation: wrongshake .45s; }
+.l-count { display: flex; align-items: baseline; justify-content: center; gap: 10px; }
+.l-count .sk { font-size: 18px; color: var(--ink-soft); }
+.l-count b { font: 400 32px var(--font-display); color: var(--tangerine-deep); }
+.f-stars { display: flex; gap: 6px; color: #ebd4ae; }
+.f-stars svg { width: 34px; height: 34px; }
+.f-stars .got { color: var(--sun); filter: drop-shadow(0 2px 0 #d9a400); }
+.f-opts { display: grid; grid-template-columns: repeat(3, auto); gap: clamp(10px, 2.4vw, 24px); font-size: clamp(64px, 14vmin, 130px); }
+.f-opts.n4 { grid-template-columns: repeat(4, auto); font-size: clamp(56px, 12vmin, 116px); }
+.f-opts.n6 { grid-template-columns: repeat(3, auto); font-size: clamp(52px, 10.5vmin, 104px); }
+.f-opt { box-shadow: inset 0 0 0 .03em var(--grid), 0 .06em 0 #e2c9a0, 0 .1em .25em rgba(0, 0, 0, .1); }
+.f-opt.right { --grid: var(--mint); background-color: #d9f7e4; animation: rightpop .6s cubic-bezier(.3, 1.6, .6, 1); }
+.f-opt.wrong { animation: wrongshake .45s; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .f-opts.n6 { grid-template-columns: repeat(6, auto); }
+  .rv-grid { grid-template-columns: repeat(10, auto); font-size: 52px; }
+  .snd-card .e { font-size: 44px; }
+}
+
+/* ================= 生字库 ================= */
+.bank .bk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0 10px; }
+.bank .bk-head h3 { margin: 0; white-space: nowrap; }
+.bank .bk-head .btn { flex: none; }
+.bk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 10px; }
+.bk {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 4px; border: 0; border-radius: 18px; background: #fff; box-shadow: 0 4px 0 var(--paper-edge); cursor: pointer;
+}
+.bk .ch { font-size: 44px; }
+.bk small { font: 12px var(--font-ui); color: var(--ink-soft); white-space: nowrap; }
+.bk.got { opacity: .72; }
+.bk .ok { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--mint); color: #fff; }
+.bk .ok svg { width: 14px; height: 14px; }
+.bk-empty { margin: 18px 0; font: 18px var(--font-display); color: var(--ink-soft); }
+
+/* ================= 挑战：把整个故事从头到尾读一遍 ================= */
+.challenge { gap: 8px; }
+.ch-count { flex: none; min-width: 50px; font: 17px var(--font-display); color: var(--ink-soft); text-align: right; }
+.ch-bar { flex: none; width: min(860px, 100%); height: 10px; border-radius: 5px; background: #f1dfbd; overflow: hidden; }
+.ch-bar i { display: block; height: 100%; width: 0; border-radius: 5px; background: var(--mint); transition: width .4s; }
+.ch-list { flex: 1; min-height: 0; width: min(860px, 100%); overflow: auto; padding: 22vh 4px 30vh; -webkit-overflow-scrolling: touch; }
+.ch-line {
+  margin: 0 0 .45em; padding: .25em .45em; border-radius: 18px; text-align: left;
+  font: clamp(28px, 5vmin, 44px)/1.55 var(--font-kai); color: #c2b294; transition: color .3s, background-color .3s, font-size .3s;
+}
+.ch-line.done { color: #9cb8a5; }
+.ch-line.cur { color: var(--ink); background: #fff; box-shadow: 0 5px 0 var(--paper-edge); font-size: clamp(34px, 6.4vmin, 56px); }
+.ch-w { display: inline-block; white-space: nowrap; }
+.ch-c, .ch-p { display: inline-block; border-radius: .15em; }
+.ch-line.cur .ch-c { cursor: pointer; }
+.ch-c.helped { color: #6f52d9; background: #f0ebff; }
+.ch-c.nope { animation: nope .42s ease-in-out; }
+.challenge.helping .ch-line.cur .ch-c { background: #fff3c4; box-shadow: inset 0 0 0 2px var(--sun); }
+.ch-tip { margin: 0; font: 20px var(--font-display); color: var(--rose-deep); }
+.ch-tip[hidden] { display: none; }
+.ch-btns .say.help { position: static; }
+.challenge.helping .say.help { --hand-bg: var(--rose); background: var(--rose); color: #fff; box-shadow: 0 5px 0 var(--rose-deep); }
+.ch-done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; }
+.ch-crown { font-size: clamp(96px, 20vmin, 160px); line-height: 1; animation: stickerin .85s cubic-bezier(.3, 1.6, .6, 1); }
+.ch-done h2 { margin: 0; font: 400 clamp(26px, 5vmin, 40px)/1.3 var(--font-display); color: var(--ink); }
+.ch-done .rw-help { margin: 0; }
+.btn.chal { background: var(--sun); color: #6a4a00; box-shadow: 0 6px 0 #e0ae00; animation: nudge 1.6s ease-in-out 1.2s 3; }
+.lv-set { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.lv-set select { max-width: 240px; font: 16px var(--font-ui); padding: 6px 8px; border-radius: 10px; border: 2px solid var(--paper-edge); background: #fff; color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  .rv-opt.show, .snd-card.right, .f-opt.right, .rv-opt.right, .ch-crown { animation: none !important; }
+}
+@media (max-width: 430px) {
+  /* 手机竖着：爱心 + 四个按钮放一行 */
+  .map-head .tools { gap: 6px; flex-wrap: nowrap; }
+  .map-head .tool { width: 56px; height: 58px; font-size: 13px; border-radius: 16px; }
+  .map-head .tool .ic svg { width: 25px; height: 25px; }
+  .map-head .hearts { height: 50px; padding: 0 12px 0 9px; font-size: 22px; gap: 4px; }
+  .map-head .hearts .ic svg { width: 24px; height: 24px; }
+}

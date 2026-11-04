@@ -180,33 +180,56 @@ window.HANZI_INTRO = {
  * 读一读、写一写、找一找的话按字生成；多音字、单念不好念的字说成「X个的X」，不会念错。
  */
 window.LESSON = {
-  follow: '小朋友，跟我一起读！',
-  readGood: '读得真好！',
+  // 读一读：老师先念，再请小动物来念，孩子听一听谁念对了
+  readIntro: '我们来读一读这个字。',
+  soundAsk: '这个字怎么读？小动物们说得不一样。听一听，谁说对了？',
+  dog: '小狗说：',
+  cat: '小猫说：',
+  bunny: '小兔说：',
+  soundWho: '谁说对了？点一点它。',
+  soundRight: '对啦！它说对了！',
+  soundWrong: '不对哦，再听一听。',
+  // 写一写
   writeIntro: '我们一起来写一写，看看笔画是怎么走的。',
   traceAsk: '现在，请你也来写一写。用手指，一笔一笔跟着写。',
   traceDone: '你写得真棒！',
+  // 说一说
   wordsIntro: '这个字，还能组成词语。我们一起来读一读。',
+  // 找一找（一共找五次）
+  findIntro: '请你找一找：',
+  findMore: '再找一找：',
   findRight: '找对啦！你真棒！',
   findWrong: '不对哦，再找一找。',
   done: '这个字，我们学会啦！',
+  // 读故事前：自己挑不认识的字
+  pickAsk: '读故事以前，看看这些字。你都认识吗？不认识的字，点一下。',
+  pickAll: '都认识？真棒！我们开始读故事吧。',
+  pickLearn: '好，我们来学这几个字。',
+  // 读新故事前：复习生字库里的字
+  reviewHello: '读新故事以前，先复习一下上次不认识的字。听一听，找一找。',
+  reviewShow: '在这里！记住它哦。',
+  reviewDone: '复习完啦！这些字，你都认识了！',
+  // 读完以后：完整读一遍
+  challengeAsk: '要不要挑战一下：把整个故事，从头到尾读一遍？',
+  challengeGo: '一句一句，大声读。读完一句，点下面的按钮。',
+  challengeDone: '你把整个故事都读完啦！真了不起！',
 };
+/* 写一写时老师说的笔画名称（横、竖、横折钩……）。录音的名字前面加「笔画·」，免得和单个字（比如「点」）混在一起。 */
+window.strokeKey = (name) => '笔画·' + name;
 (function () {
-  const NUM = ['', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六'];
-  const ORD = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六'];
+  const NUM = ['', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八'];
   const CTX = { 着: '看着的着', 几: '几个的几', 分: '分开的分', 把: '一把伞的把', 厂: '工厂的厂', 父: '父亲的父', 打: '打开的打' };
+  // 有图、有讲法的生字（HANZI_INTRO 里的）用专门的句子；故事里别的字用通用的说法 + 这个字的读音
   window.lessonLines = function (c) {
-    const d = window.HANZI_INTRO[c] || {};
+    const d = window.HANZI_INTRO[c];
     const ctx = CTX[c];
-    const st = window.HANZI_STROKES && window.HANZI_STROKES[c];
-    const n = st ? st.strokes.length : 0;
+    const names = (window.STROKE_NAMES || {})[c] || [];
     return {
-      // 读一读：老师先说这一句，然后字音（单念的字）念三遍，每遍中间停一停，再请孩子跟着读
-      read: d.read || (ctx ? `这个字念${c}，${ctx}。` : `这个字念${c}。`),
-      count: n ? `这个字，一共${NUM[n]}笔。` : '',
-      // 写一写：演示的时候老师一笔一笔数：第一笔、第二笔……
-      strokes: Array.from({ length: n }, (_, k) => `第${ORD[k + 1]}笔`),
-      find: d.find || (ctx ? `请你找一找，哪个是${ctx}？` : `请你找一找，哪个是${c}字？`),
-      words: (d.words || []).map((w) => `${w}，${w}。`),
+      read: d ? d.read || (ctx ? `这个字念${c}，${ctx}。` : `这个字念${c}。`) : '',
+      count: names.length ? `这个字，一共${NUM[names.length]}笔。` : '',
+      strokes: names.map(window.strokeKey),
+      find: d ? d.find || (ctx ? `请你找一找，哪个是${ctx}？` : `请你找一找，哪个是${c}字？`) : '',
+      words: ((d && d.words) || []).map((w) => `${w}，${w}。`),
     };
   };
 })();

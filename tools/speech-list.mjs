@@ -14,7 +14,7 @@ vm.createContext(ctx);
 for (const f of ['js/chars.js', 'js/stories.js', 'js/phrases.js', 'js/strokes.js', 'js/hanzi.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), ctx, { filename: f });
 }
-const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS, HANZI_INTRO = {}, LESSON = {}, lessonLines } = ctx.window;
+const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS, HANZI_INTRO = {}, LESSON = {}, lessonLines, STROKE_NAMES = {}, strokeKey } = ctx.window;
 const fix = (s) => SAY_FIX.reduce((acc, [re, to]) => acc.replace(re, to), s);
 const isHan = (c) => /\p{Script=Han}/u.test(c);
 const items = new Map();
@@ -40,17 +40,17 @@ Object.keys(HANZI_INTRO).forEach((c) => { if (!chars.includes(c)) chars.push(c);
 chars.forEach((c) => add(c, SAY_ALONE[c] || c, 'char'));
 // 认生字（老师上课，语速慢一点：teach）：看一看、变一变、读一读、写一写、说一说、找一找
 Object.values(LESSON).forEach((w) => add(w, null, 'teach'));
+// 笔画名称（写一写时一笔一笔说）：横、竖、横折钩……
+[...new Set(Object.values(STROKE_NAMES).flat())].forEach((n) => add(strokeKey(n), n, 'teach'));
+// 故事里每个字都能上课（读故事前孩子自己挑不认识的字）：这个字一共几笔
+chars.forEach((c) => { const ln = lessonLines(c); add(ln.count, null, 'teach'); });
 Object.entries(HANZI_INTRO).forEach(([c, d]) => {
   add(d.look, null, 'teach');
   add(d.say, null, 'teach');
-  const ln = lessonLines ? lessonLines(c) : null;
-  if (ln) {
-    add(ln.read, null, 'teach');
-    add(ln.count, null, 'teach');
-    (ln.strokes || []).forEach((w) => add(w, null, 'teach'));
-    add(ln.find, null, 'teach');
-    ln.words.forEach((w) => add(w, null, 'teach'));
-  }
+  const ln = lessonLines(c);
+  add(ln.read, null, 'teach');
+  add(ln.find, null, 'teach');
+  ln.words.forEach((w) => add(w, null, 'teach'));
   if (d.hear) add(d.hear, d.hear, 'word');
 });
 Object.values(PIC_WORDS).forEach((w) => add(w, w, 'word'));
