@@ -84,7 +84,7 @@
 
 - **https://shizi-gushiwu.lovable.app** ：任何人都能打开，**没有可可的照片**。照片只在私密的 claude.ai 链接里；也可以在自己的设备上用「家长 → 可可的照片」加，只存在那台设备上。
 - Lovable 项目里只有一个外壳网页 `public/app.html`，首页 `/` 会跳到它。样式、脚本、字体和录音都从 jsDelivr 读这个公开仓库某一次提交里的文件：`https://cdn.jsdelivr.net/gh/necrobiosis/GTP@<提交号>/…`。录音地址用 `window.AUDIO_BASE` 指过去。
-- 改了故事或录音以后：先推送到 GitHub，再把 `public/app.html` 里的提交号换成新的（可以让 Lovable 的 AI 改，也可以在 Lovable 编辑器里改），然后点 Publish。
+- 改了故事或录音以后：先推送到 GitHub，再把 `public/app.html` 里的提交号换成新的（可以让 Lovable 的 AI 改，也可以在 Lovable 编辑器里改），然后点 Publish。`index.html` 里加了新的脚本时（比如认生字用的 `js/strokes.js`、`js/vendor/hanzi-writer.min.js`），`app.html` 里也要按同样的顺序加上。
 - 每个网址各存各的：在 Lovable 网址上读到第几关、得了多少爱心、加了哪些照片，和 claude.ai 链接里的不通用。
 
 ## 公开网址（Netlify）
