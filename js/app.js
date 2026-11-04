@@ -125,7 +125,9 @@
             savedAt = body.at;
             try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) { /* 忽略 */ }
             if (onAdopt) onAdopt();
-          } else if (savedAt) {
+          } else if (savedAt || Object.keys(progress.done).length || progress.hearts || Object.keys(progress.bank).length) {
+            // 账号里还没有（或者是旧的）：把这台设备上的进度存上去（旧版本存的进度没有时间，就当是现在的）
+            if (!savedAt) savedAt = Date.now();
             write();
           }
         } catch (e) { ref = null; }
