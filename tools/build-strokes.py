@@ -47,6 +47,8 @@ FIX = {
     # 女字旁最后一笔是提；马的最后一笔是提；虫的第五笔是提
     "好": {2: "提"}, "妈": {2: "提", 5: "提"}, "马": {2: "提"}, "虫": {4: "提"},
     "蛋": {4: "点", 9: "提"}, "香": {4: "点"}, "绿": {10: "点"},
+    # 新加的字：女字旁的提、宝盖头的横钩、欠的横钩
+    "娜": {2: "提"}, "姐": {2: "提"}, "妹": {2: "提"}, "姓": {2: "提"}, "宝": {2: "横钩"}, "欣": {5: "横钩"},
     # 走之底最后一笔是平捺
     "连": {6: "平捺"}, "还": {6: "平捺"}, "送": {8: "平捺"},
 }
@@ -81,8 +83,15 @@ def all_chars():
             if "一" <= c <= "鿿" and c not in chars:
                 chars.append(c)
     practice = js_string((ROOT / "js" / "chars.js").read_text(encoding="utf-8"), r"PRACTICE_CHARS")
-    for c in practice:
-        if c not in chars:
+    # 讲解里的字（charinfo.js 的每一项）、身边的字、小测验里的字
+    more = re.findall(r"^\s*(\S):\s*\[", (ROOT / "js" / "charinfo.js").read_text(encoding="utf-8"), flags=re.M)
+    for name in ("mine.js", "tests.js"):
+        text = (ROOT / "js" / name).read_text(encoding="utf-8")
+        text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+        text = re.sub(r"(?m)//.*$", "", text)
+        more += [c for c in text if "\u4e00" <= c <= "\u9fff"]
+    for c in list(practice) + more:
+        if c not in chars and "\u4e00" <= c <= "\u9fff":
             chars.append(c)
     return chars
 
@@ -169,7 +178,7 @@ def main():
     strokes, names, pinyin, problems = {}, {}, {}, []
     for c in chars:
         d = json.loads(fetch(HW_URL.format(urllib.parse.quote(c)), f"hw-{ord(c):x}.json"))
-        strokes[c] = {"strokes": d["strokes"], "medians": d["medians"]}
+        strokes[c] = {"strokes": d["strokes"], "medians": d["medians"], "radStrokes": d.get("radStrokes") or []}
         code = orders.get(c)
         if not code:
             problems.append(f"{c}：cnchar 里没有")

@@ -29,7 +29,8 @@
   ];
   const MEDALS = [[10, '🥉', '铜牌'], [30, '🥈', '银牌'], [60, '🥇', '金牌'], [100, '👑', '皇冠']];
   // 每关能得的爱心（自己读完全都拿到；求助一次用掉一颗），越往后越多
-  const LEVEL_HEARTS = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 5, 6: 5, 7: 5 };
+  const LEVEL_HEARTS = { 1: 3, 2: 3, 3: 4, 4: 4, 5: 5, 6: 5, 7: 5, 8: 5 };
+  const HELP_COST = 5; // 求助一次用掉几颗爱心
 
   // 故事里出现、但还没学过的字（按第一次出现的顺序）
   const EXTRA = [];
@@ -43,7 +44,7 @@
   const WORDS = window.PIC_WORDS || {};
   const PHRASES = Object.assign({
     quizAsk: '找一找', quizAgain: '再听一听', praise: ['对啦！'], rewardPrefix: '太棒了！你得到了', hello: '你好，我们来读故事。',
-    helpAsk: '要用一颗爱心求助吗？', helpAskFree: '要求助吗？', helpPick: '点一点，你不会读的那个字。', helpHint: '不会读？点举手的按钮求助。',
+    helpAsk: '要用五颗爱心求助吗？', helpAskFree: '要求助吗？', helpPick: '点一点，你不会读的那个字。', helpHint: '不会读？点举手的按钮求助。',
     introHello: '先来认识几个生字吧！',
   }, window.PHRASES || {});
 
@@ -59,8 +60,14 @@
     intro: {},     // 每个字上过几次课
     learned: {},   // 家长标成「认识了」的生字
     taught: {},    // 上过课（找一找五次都找到了）的字：读故事前不再拿出来
-    bank: {},      // 生字库：求助过的字、说不认识的字
-    challenge: {}, // 完整读一遍读完的故事
+    bank: {},      // 生字库：求助过的字、说不认识的字、小测验不认识的字
+    coins: 0,      // 金币：学习赚的，在贴纸花园买装饰
+    stationPass: {}, // 每一站的小测验过了没有
+    garden: {},    // 花园：{ items: [[图, x, y], ...] } 买的装饰和摆的位置
+    myName: '',    // 身边的字：孩子的全名（家长填的，只存在这台设备 / 自己的账号里）
+    myChars: '',   // 身边的字：自己加的字
+    myStories: [], // 身边的字：自己写的故事
+    myData: {},    // 自己加的字的笔顺（联网时下载的）
     unlockAll: false,
   };
   // together：家长陪读（故事页有「读一读」、点字直接发音）；默认关，孩子先自己读，不会的字再求助
@@ -70,7 +77,7 @@
   function loadState(st) {
     Object.keys(FIELDS).forEach((k) => {
       const v = st[k];
-      progress[k] = v == null ? (typeof FIELDS[k] === 'object' ? {} : FIELDS[k]) : v;
+      progress[k] = v == null ? (Array.isArray(FIELDS[k]) ? [] : typeof FIELDS[k] === 'object' ? {} : FIELDS[k]) : v;
     });
     progress.unlockAll = !!progress.unlockAll;
     Object.keys(settings).forEach((k) => delete settings[k]);
@@ -187,6 +194,7 @@
     check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     replay: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.2 12.5A7 7 0 1 0 7.4 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M4.6 3.8v4.6h4.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l2.6 5.5 6 .7-4.4 4.1 1.2 5.9L12 16.5l-5.4 2.9 1.2-5.9L3.4 9.4l6-.7z" fill="currentColor"/></svg>',
+    flower: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.2" r="3.4" fill="currentColor"/><circle cx="7" cy="10" r="3.4" fill="currentColor"/><circle cx="17" cy="10" r="3.4" fill="currentColor"/><circle cx="9" cy="15" r="3.2" fill="currentColor"/><circle cx="15" cy="15" r="3.2" fill="currentColor"/><circle cx="12" cy="11" r="2.6" fill="#ffd34d"/><path d="M12 15v7" stroke="currentColor" stroke-width="2"/></svg>',
     book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.4C9.8 4.9 6.6 4.5 3.2 5v13.6c3.4-.5 6.6-.1 8.8 1.4 2.2-1.5 5.4-1.9 8.8-1.4V5c-3.4-.5-6.6-.1-8.8 1.4z" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linejoin="round"/><path d="M12 6.4V20" stroke="currentColor" stroke-width="2"/></svg>',
     // 求助：举起的小手 + 问号泡泡（泡泡的底色跟着按钮变：--hand-bg）
     help: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><rect x="5.6" y="6.6" width="2.9" height="9" rx="1.45"/><rect x="8.75" y="4.4" width="2.9" height="11" rx="1.45"/><rect x="11.9" y="5.4" width="2.9" height="10" rx="1.45"/><rect x="15" y="7.8" width="2.7" height="8" rx="1.35"/><rect x="2.3" y="12.2" width="2.9" height="7.4" rx="1.45" transform="rotate(-38 3.75 15.9)"/><path d="M5.6 12.6h12.1v3.2c0 3.6-2.7 6.5-6.05 6.5S5.6 19.4 5.6 15.8z"/></g><circle cx="19.2" cy="4.9" r="4.2" style="fill:var(--hand-bg,#fff)" stroke="currentColor" stroke-width="1.3"/><path d="M17.85 3.95a1.4 1.4 0 1 1 2.05 1.25c-.45.25-.7.55-.7 1.05v.25" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><circle cx="19.2" cy="7.55" r=".72" fill="currentColor"/></svg>',
@@ -472,10 +480,42 @@
   let Q = null; // 小挑战
 
   const isDone = (i) => !!progress.done[STORIES[i].id];
-  const isOpen = (i) => progress.unlockAll || i === 0 || isDone(i - 1) || isDone(i);
+  const TESTS = window.STATION_TESTS || {};
+  const isMain = (i) => STORIES[i] && STORIES[i].stage <= STAGES.length;
+  const stageDone = (st) => STORIES.every((s, i) => s.stage !== st || isDone(i));
+  // 这一站的小测验过了（或者已经读到下一站了：以前的进度不锁回去）
+  const stagePassed = (st) => !TESTS[st] || !!progress.stationPass[st] || STORIES.some((s, i) => s.stage === st + 1 && isDone(i));
+  const testOpen = (st) => progress.unlockAll || stageDone(st);
+  const isOpen = (i) => {
+    const s = STORIES[i];
+    if (!isMain(i)) return true; // 身边的字里的故事随时能读
+    if (progress.unlockAll || i === 0 || isDone(i)) return true;
+    if (!isDone(i - 1)) return false;
+    // 每一站的第一关：前一站的小测验要先过
+    return STORIES[i - 1].stage === s.stage || stagePassed(STORIES[i - 1].stage);
+  };
   function currentLevel() {
-    for (let i = 0; i < STORIES.length; i++) if (isOpen(i) && !isDone(i)) return i;
+    for (let i = 0; i < STORIES.length; i++) if (isMain(i) && isOpen(i) && !isDone(i)) return i;
     return -1;
+  }
+  // 下一件要做的事是不是某一站的小测验
+  const pendingTest = () => {
+    for (let st = 1; st <= STAGES.length; st++) if (TESTS[st] && stageDone(st) && !stagePassed(st)) return st;
+    return 0;
+  };
+  /* ---------- 金币 ---------- */
+  function addCoins(n, from) {
+    if (!n) return;
+    progress.coins += n;
+    save();
+    const m = h('span', { class: 'coin-float' }, `+${n}`, h('i', null, '🪙'));
+    const r = from && from.getBoundingClientRect ? from.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0 };
+    m.style.left = r.left + r.width / 2 + 'px';
+    m.style.top = r.top + 'px';
+    fx.append(m);
+    if (!m.animate) { setTimeout(() => m.remove(), 900); return; }
+    m.animate([{ transform: 'translate(-50%, 0) scale(.6)', opacity: 0 }, { transform: 'translate(-50%, -14px) scale(1.25)', opacity: 1, offset: 0.25 },
+      { transform: 'translate(-50%, -70px) scale(1)', opacity: 0 }], { duration: 1300, easing: 'ease-out' }).onfinish = () => m.remove();
   }
 
   function toolBtn(svg, label, fn) {
@@ -487,8 +527,11 @@
     R = null;
     document.body.classList.remove('lock');
     app.innerHTML = '';
-    const cur = currentLevel();
-    const doneCount = STORIES.filter((s, i) => isDone(i)).length;
+    const testNext = pendingTest();
+    const cur = testNext ? -1 : currentLevel();
+    const doneCount = STORIES.filter((s, i) => isMain(i) && isDone(i)).length;
+    const mainCount = STORIES.filter((s, i) => isMain(i)).length;
+    const due = bankDue();
 
     const head = h('header', { class: 'map-head' },
       h('div', { class: 'brand' },
@@ -497,10 +540,10 @@
           : h('div', { class: 'logo', 'aria-hidden': 'true' }, h('span', null, '字')),
         h('div', { class: 'brand-t' },
           h('h1', null, '识字故事屋'),
-          h('p', null, `${KID.name}认识 ${KNOWN_LIST.length} 个字 · ${STORIES.length} 个故事 · 读完 ${doneCount} 个`))),
+          h('p', null, `${KID.name}认识 ${KNOWN_LIST.length} 个字 · ${mainCount} 个故事 · 读完 ${doneCount} 个`))),
       h('div', { class: 'tools' },
-        h('div', { class: 'hearts', title: '爱心' }, icon(I.heart), h('b', null, progress.hearts)),
-        toolBtn(I.gift, '宝箱', openStickers),
+        h('div', { class: 'hearts', title: '爱心和金币' }, icon(I.heart), h('b', null, progress.hearts), h('span', { class: 'coin-e', 'aria-hidden': 'true' }, '🪙'), h('b', { class: 'coins-n' }, progress.coins)),
+        toolBtn(I.flower, '花园', openGarden),
         (() => {
           const b = toolBtn(I.book, '生字库', openBank);
           const n = bankDue().length;
@@ -510,7 +553,14 @@
         toolBtn(I.grid, '字卡', openChars),
         toolBtn(I.gear, '家长', openSettings)));
 
-    const wrap = h('main', { class: 'map' }, head);
+    // 身边的字（主线以外）、今日回顾
+    const extra = h('div', { class: 'map-extra' },
+      h('button', { class: 'mine-card', type: 'button', onclick: () => openMine() },
+        h('span', { class: 'mc-e', 'aria-hidden': 'true' }, '✨'),
+        h('span', { class: 'mc-t' }, h('b', null, '身边的字'), h('small', null, '我的名字 · 家人 · 好朋友 · 冰雪奇缘'))),
+      due.length ? h('button', { class: 'daily-chip', type: 'button', onclick: () => openReview(due.slice(0, 10), { daily: true, then: () => renderMap(), back: () => renderMap() }) },
+        h('span', { 'aria-hidden': 'true' }, '📅'), '今日回顾', h('b', null, due.length)) : null);
+    const wrap = h('main', { class: 'map' }, head, extra);
     STAGES.forEach((st, si) => {
       const levels = STORIES.map((s, i) => [s, i]).filter(([s]) => s.stage === si + 1);
       if (!levels.length) return;
@@ -530,20 +580,37 @@
         h('span', { class: 'disc' },
           done ? h('span', { class: 'prize' }, s.prize[0]) : open ? h('span', { class: 'num' }, i + 1) : icon(I.lock, 'lock'),
           done ? h('span', { class: 'badge' }, i + 1) : null,
-          progress.challenge[s.id] ? h('span', { class: 'crown', title: '从头到尾读过一遍' }, '👑') : null),
+          null),
         h('span', { class: 'name' }, s.title),
         i === cur ? h('span', { class: 'flag' }, '开始') : null);
         node.addEventListener('click', () => {
           if (!open) {
             pop(node);
             Sfx.oops();
-            toast('先读完前面的故事，就能打开啦');
+            toast(isDone(i - 1) ? '先过前面一站的小测验，就能打开啦' : '先读完前面的故事，就能打开啦');
             return;
           }
           openCover(i);
         });
         trail.append(node);
       });
+      // 这一站的小测验
+      const sn = si + 1;
+      if (TESTS[sn]) {
+        const passed = !!progress.stationPass[sn];
+        const can = testOpen(sn);
+        const tnode = h('button', {
+          class: `node test ${passed ? 'done' : can ? 'open' : 'locked'}${testNext === sn ? ' current' : ''}`, type: 'button', style: `--x:${[50, 76, 50, 24][levels.length % 4]}`,
+          'aria-label': `第${sn}站小测验${passed ? '（过关了）' : can ? '' : '（读完这一站的故事才能考）'}`,
+        }, h('span', { class: 'disc' }, h('span', { class: 'prize' }, passed ? '🏅' : can ? '📝' : '🔒')),
+        h('span', { class: 'name' }, '小测验'),
+        testNext === sn ? h('span', { class: 'flag' }, '考一考') : null);
+        tnode.addEventListener('click', () => {
+          if (!can) { pop(tnode); Sfx.oops(); toast('读完这一站的故事，就可以考了'); return; }
+          openTest(sn);
+        });
+        trail.append(tnode);
+      }
       wrap.append(h('section', { class: `stage-sec st-${si + 1}` },
         h('div', { class: 'sign' }, h('b', null, st.name), h('span', null, st.note)),
         trail));
@@ -552,7 +619,7 @@
     app.append(wrap);
     drawTrails();
     // 当前关卡不在屏幕里时才滚过去
-    const target = app.querySelector(`.node[data-i="${focus != null ? focus : cur}"]`);
+    const target = app.querySelector(focus == null && testNext ? '.node.test.current' : `.node[data-i="${focus != null ? focus : cur}"]`);
     if (target) {
       const r = target.getBoundingClientRect();
       if (r.bottom > window.innerHeight - 20 || r.top < 0) target.scrollIntoView({ block: 'center' });
@@ -586,7 +653,8 @@
     const s = STORIES[i];
     const all = hanOf(storyText(s));
     // 这一关第一次出现的新字（前面故事里见过的不再列出来）
-    const fresh = EXTRA.filter((e) => e.story === i).map((e) => e.ch);
+    const fresh = isMain(i) ? EXTRA.filter((e) => e.story === i).map((e) => e.ch)
+      : [...new Set(hanOf(s.title + storyText(s)))].filter((c) => !ALL_CHARS.includes(c)); // 身边的字里的故事：主线没有的字
     const due = settings.review ? bankDue() : []; // 读之前要先复习的字
     Voice.prefetch(fresh);
     const seen = hanOf(s.title + storyText(s)).some((c) => !KNOWN.has(c));
@@ -594,7 +662,7 @@
     Voice.unlock();
     modal('cover st-' + s.stage, [
       h('div', { class: 'cover-top' },
-        h('span', { class: 'chip' }, `第 ${i + 1} 关`),
+        h('span', { class: 'chip' }, isMain(i) ? `第 ${i + 1} 关` : '身边的字'),
         h('span', { class: 'meta' }, `${s.pages.length} 页 · ${all.length} 个字`)),
       h('div', { class: 'cover-title', lang: 'zh-CN' }, [...s.title].map((c) => charTile(c, '', undefined, 'title'))),
       due.length ? h('div', { class: 'cover-pre' }, h('span', { class: 'lbl' }, '先复习'),
@@ -610,7 +678,7 @@
         h('span', { class: 'ic hand', html: I.help }), '先自己读。不会的字点「求助」，每次用一颗爱心，只读一个字。'),
       h('div', { class: 'cover-btns' },
         h('button', { class: 'btn big', type: 'button', onclick: () => startStory(i) }, due.length ? '先复习' : '开始读', icon(I.next)),
-        done ? h('button', { class: 'btn soft', type: 'button', onclick: () => { closeModal(true); openChallenge(i); } }, '📖 完整读一遍') : null),
+        null),
     ]);
     // 不先读题目：让孩子自己读
   }
@@ -658,7 +726,7 @@
     const dots = h('div', { class: 'dots' }, s.pages.map(() => h('i')));
     const self = !settings.together; // 孩子自己读（默认）
     const base = LEVEL_HEARTS[s.stage] || 3;
-    const hearts = h('div', { class: 'r-hearts', title: '这一关的爱心，求助一次用一颗' }, icon(I.heart), h('b', null, String(base)));
+    const hearts = h('div', { class: 'r-hearts', title: `我的爱心，求助一次用 ${HELP_COST} 颗` }, icon(I.heart), h('b', null, String(progress.hearts)));
     const bar = h('header', { class: 'r-bar' },
       h('button', { class: 'rbtn', type: 'button', 'aria-label': '回到小路', html: I.home, onclick: () => exitReader() }),
       h('div', { class: 'r-title' }, h('b', null, s.title), dots),
@@ -683,7 +751,7 @@
     R = {
       i, s, page: -1, root, scenes, art, hint, dots, count: bar.querySelector('.r-count'), text, prev, next, say, big, token: 0, autoT: 0, swiped: false,
       // 求助：这一关的爱心、求助了几次、求助过的字（再点不扣）、是不是正在挑字
-      self, base, hearts: base, helps: 0, helped: new Set(), helping: false, helpPaid: false, hinted: false,
+      self, base, spent: 0, helps: 0, helped: new Set(), helping: false, helpPaid: 0, hinted: false,
       help, helpLbl, tip, nudgeEl: nudge, heartsEl: hearts,
     };
     bindSwipe(root);
@@ -957,14 +1025,14 @@
   function updateHearts(spent) {
     if (!R || !R.heartsEl) return;
     const el = R.heartsEl;
-    el.querySelector('b').textContent = String(R.hearts);
-    el.classList.toggle('empty', R.hearts <= 0);
+    el.querySelector('b').textContent = String(progress.hearts);
+    el.classList.toggle('empty', progress.hearts <= 0);
     if (!spent) return;
     el.classList.remove('spend');
     void el.offsetWidth;
     el.classList.add('spend');
     const r = el.getBoundingClientRect();
-    const m = h('span', { class: 'minus-float' }, '−1');
+    const m = h('span', { class: 'minus-float' }, '−' + spent);
     m.style.left = r.left + r.width / 2 + 'px';
     m.style.top = r.bottom + 'px';
     fx.append(m);
@@ -980,27 +1048,30 @@
     if (R.helping) { cancelHelp(); return; }
     stopReading();
     R.nudgeEl.hidden = true;
-    const left = R.hearts;
+    const left = progress.hearts;
+    const cost = Math.min(HELP_COST, left);
     modal('ask', [
       h('div', { class: 'ask-ic', html: I.help }),
       h('h2', null, '不会读了吗？'),
-      left > 0
-        ? h('p', { class: 'ask-cost' }, h('span', { class: 'cost' }, icon(I.heart), '−1'), h('span', null, `求助要用掉一颗爱心，这一关还有 ${left} 颗。`))
-        : h('p', { class: 'ask-cost' }, '这一关的爱心用完了，求助不再扣爱心。'),
+      cost > 0
+        ? h('p', { class: 'ask-cost' }, h('span', { class: 'cost' }, icon(I.heart), '−' + cost), h('span', null, `求助一次要用掉 ${HELP_COST} 颗爱心，你现在有 ${left} 颗。`))
+        : h('p', { class: 'ask-cost' }, '爱心用完了，这次求助不扣爱心。'),
       h('p', { class: 'ask-sub' }, '求助以后，点你不会读的那个字，只读这一个字。'),
       h('div', { class: 'ask-btns' },
         h('button', { class: 'btn big', type: 'button', onclick: () => { closeModal(); startHelp(); } },
           h('span', { class: 'ic hand', html: I.help }), '求助'),
         h('button', { class: 'btn soft', type: 'button', onclick: () => { closeModal(); Voice.stop(); } }, '我再试试')),
     ]);
-    Voice.say(left > 0 ? PHRASES.helpAsk : PHRASES.helpAskFree);
+    Voice.say(cost > 0 ? PHRASES.helpAsk : PHRASES.helpAskFree);
   }
   function startHelp() {
     if (!R) return;
-    R.helpPaid = R.hearts > 0;
+    R.helpPaid = Math.min(HELP_COST, progress.hearts);
     if (R.helpPaid) {
-      R.hearts -= 1;
-      updateHearts(true);
+      progress.hearts -= R.helpPaid;
+      R.spent += R.helpPaid;
+      save();
+      updateHearts(R.helpPaid);
     }
     R.helps += 1;
     R.helping = true;
@@ -1012,7 +1083,7 @@
   }
   function endHelp() {
     R.helping = false;
-    R.helpPaid = false;
+    R.helpPaid = 0;
     R.root.classList.remove('helping');
     R.helpLbl.textContent = '求助';
     R.help.setAttribute('aria-label', '求助');
@@ -1022,8 +1093,10 @@
   function cancelHelp() {
     if (!R || !R.helping) return;
     if (R.helpPaid) {
-      R.hearts += 1;
-      updateHearts(false);
+      progress.hearts += R.helpPaid;
+      R.spent -= R.helpPaid;
+      save();
+      updateHearts(0);
     }
     R.helps -= 1;
     endHelp();
@@ -1148,7 +1221,12 @@
   const hearOf = (c) => (HZ[c] && HZ[c].hear) || c;
   const linesOf = (c) => (window.lessonLines ? window.lessonLines(c) : { read: '', count: '', find: '', words: [], strokes: [] });
   const strokeName = (key) => key.replace(/^笔画·/, '');
-  const canTeach = (c) => !!(HZ[c] || (SN[c] && window.HANZI_STROKES && window.HANZI_STROKES[c]));
+  const CI = window.CHAR_INFO || {};
+  // 能上课的字：有讲法的、或者有笔顺的（自己加的字联网下载了笔顺）
+  const canTeach = (c) => !!(HZ[c] || CI[c] || (window.HANZI_STROKES && window.HANZI_STROKES[c]));
+  // 说一说的词：[词, 图]
+  const wordsOf = (c) => (CI[c] ? CI[c][7] : ((HZ[c] && HZ[c].words) || []).map((w) => [w, '']));
+  const STRUCT_NAME = { 独体: '独体字', 左右: '左右结构', 上下: '上下结构', 左中右: '左中右结构', 上中下: '上中下结构', 半包围: '半包围结构', 全包围: '全包围结构' };
   // 故事里所有的字（都有录音、笔顺、拼音）
   const ALL_CHARS = [...new Set(STORIES.flatMap((s) => hanOf(s.title + storyText(s))))];
   const syl = (c) => (PY[c] || c).replace(/\d$/, '');
@@ -1173,16 +1251,6 @@
     const rest = shuffle(pool.filter((x) => !near.includes(x))).slice(0, n - near.length);
     return [...near, ...rest];
   }
-  // 读音的干扰项：读音像（韵母或者声母一样）、但不是同一个音的字
-  function soundOptions(c, n) {
-    const [i0, f0] = splitPy(c);
-    const seen = new Set([syl(c)]);
-    return ALL_CHARS.filter((x) => x !== c && PY[x] && !SKIP_QUIZ.has(x) && !(HZ[x] && HZ[x].hear))
-      .map((x) => { const [i, f] = splitPy(x); return { x, s: (f === f0 ? 2 : 0) + (i === i0 ? 1.6 : 0) + Math.random() * 1.2 }; })
-      .sort((a, b) => b.s - a.s)
-      .filter((o) => { if (seen.has(syl(o.x))) return false; seen.add(syl(o.x)); return true; })
-      .slice(0, n).map((o) => o.x);
-  }
 
   // 念完再往下走；步骤换了（tok 变了）就停。被别的话打断时也会往下走（得到 false）
   let introEl = null;
@@ -1198,6 +1266,7 @@
   const waitP = (ms) => new Promise((res) => setTimeout(res, ms));
   function stopIntroUI() {
     lessonTok += 1;
+    stopGarden();
     if (pendingSay) { const p = pendingSay; pendingSay = null; p(false); }
     if (lessonWriter) { try { lessonWriter.cancelQuiz(); } catch (e) { /* 忽略 */ } lessonWriter = null; }
     if (introEl) { introEl.remove(); introEl = null; }
@@ -1214,17 +1283,24 @@
   }
 
   /* ---------- 生字库：求助过的字、读故事前说不认识的字 ---------- */
-  // bank[字] = { n: 求助几次, k: 说不认识几次, at: 最近一次, m: 复习过关的时间（没有就是还要复习） }
+  // bank[字] = { n: 求助几次, k: 说不认识 / 小测验不认识几次, at: 最近一次, m: 复习过关的时间, lv: 过关了几次, due: 下次回顾的时间 }
+  // 每日回顾：复习过关以后，隔 1、2、4、7、15、30 天再拿出来认一认；回顾时没认出来，就从头再来
+  const DAY = 24 * 3600 * 1000;
+  const REVIEW_GAP = [1, 1, 2, 4, 7, 15, 30];
   function bankAdd(c, how) {
     if (!isHan(c)) return;
     const b = progress.bank[c] || (progress.bank[c] = { n: 0, k: 0 });
     if (how === 'help') b.n += 1; else b.k += 1;
     b.at = Date.now();
     delete b.m;
+    b.lv = 0;
+    delete b.due;
     save();
   }
-  const bankDue = () => Object.keys(progress.bank).filter((c) => !progress.bank[c].m)
-    .sort((a, b) => (progress.bank[a].at || 0) - (progress.bank[b].at || 0));
+  const isDue = (b) => !b.m || (b.due || b.m + DAY) <= Date.now();
+  // 要回顾的字：还没过关的在前（早的先来），到了回顾时间的在后
+  const bankDue = () => Object.keys(progress.bank).filter((c) => isDue(progress.bank[c]))
+    .sort((a, b) => (!!progress.bank[a].m - !!progress.bank[b].m) || (progress.bank[a].at || 0) - (progress.bank[b].at || 0));
 
   /* ---------- 读新故事：复习 → 挑生字 → 上课 → 读故事 ---------- */
   function startStory(i) {
@@ -1244,7 +1320,8 @@
   function storyCandidates(i) {
     const s = STORIES[i];
     const chars = [...new Set(hanOf(s.title + storyText(s)))].filter(canTeach);
-    const fresh = new Set(EXTRA.filter((e) => e.story === i).map((e) => e.ch));
+    // 这一关第一次出现的字（身边的字里的故事：主线故事里没有的字）
+    const fresh = new Set(s.stage > STAGES.length ? chars.filter((c) => !ALL_CHARS.includes(c)) : EXTRA.filter((e) => e.story === i).map((e) => e.ch));
     const recent = new Set(EXTRA.filter((e) => e.story === i - 1 || e.story === i - 2).map((e) => e.ch));
     const skip = (c) => progress.learned[c] || progress.taught[c] || (progress.bank[c] && progress.bank[c].m);
     const ranked = chars.filter((c) => !skip(c)).map((c, k) => {
@@ -1256,7 +1333,7 @@
       if (!KNOWN.has(c)) sc += 1;
       return { c, sc, k, n: (SN[c] || []).length };
     });
-    const top = ranked.filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc || a.k - b.k).slice(0, 6).map((x) => x.c);
+    const top = ranked.filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc || a.k - b.k).slice(0, fresh.size > 6 ? 8 : 6).map((x) => x.c);
     // 不到五个：再从故事里拿笔画多的字凑上
     const more = ranked.filter((x) => !top.includes(x.c)).sort((a, b) => b.n - a.n || a.k - b.k).map((x) => x.c);
     return top.concat(more.slice(0, Math.max(0, 5 - top.length)));
@@ -1319,6 +1396,7 @@
     o = o || {};
     const tok = overlay('review' + (o.story != null ? ' st-' + STORIES[o.story].stage : ''));
     const need = {};
+    const missed = {};
     chars.forEach((c) => { need[c] = 2; });
     let last = '';
     let busy = false;
@@ -1333,8 +1411,16 @@
     let target = '';
     const ear = h('button', { class: 'f-ear', type: 'button', 'aria-label': '再听一遍', onclick: () => sayP(target, tok) }, icon(I.speaker), h('span', null, '再听一遍'));
     const finish = async () => {
-      chars.forEach((c) => { if (progress.bank[c]) progress.bank[c].m = Date.now(); });
+      const now = Date.now();
+      chars.forEach((c) => {
+        const b = progress.bank[c];
+        if (!b) return;
+        b.lv = missed[c] ? 0 : Math.min((b.lv || 0) + 1, REVIEW_GAP.length - 1);
+        b.m = now;
+        b.due = now + REVIEW_GAP[b.lv] * DAY;
+      });
       save();
+      addCoins(chars.length + (o.daily ? 2 : 0));
       grid.innerHTML = '';
       ear.hidden = true;
       grid.append(h('div', { class: 'rv-done' }, chars.map((c) => h('span', { class: 'ch md' }, c))));
@@ -1393,6 +1479,7 @@
       }
       // 第二次还不对：告诉孩子在哪里，这个字要多对一次
       busy = true;
+      missed[target] = true;
       need[target] = Math.min(need[target] + 1, 3);
       const right = grid.querySelector(`.rv-opt[aria-label="${target}"]`);
       if (right) right.classList.add('show');
@@ -1405,17 +1492,46 @@
     introEl.append(
       h('header', { class: 'q-head' },
         h('button', { class: 'rbtn', type: 'button', 'aria-label': '先不复习了', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); if (o.story != null) renderMap(o.story); else if (o.back) o.back(); } }),
-        h('b', null, '复习生字'),
+        h('b', null, o.daily ? '今日回顾' : '回顾生字'),
         dots),
       h('div', { class: 'l-stage rv-stage' }, ear, grid),
       sub);
     drawDots();
-    Voice.prefetch([LESSON.reviewHello, LESSON.reviewShow, LESSON.reviewDone, LESSON.findWrong, ...PHRASES.praise, ...chars]);
+    Voice.prefetch([LESSON.reviewHello, LESSON.reviewTest, LESSON.reviewShow, LESSON.reviewDone, LESSON.findWrong, ...PHRASES.praise, ...chars,
+      ...chars.map((c) => CI[c] && CI[c][6])]);
+    // 先认一认：每个字讲一句（为什么这样写、这样读），比第一次上课简单
+    const remind = async () => {
+      ear.hidden = true;
+      for (let k = 0; k < chars.length; k++) {
+        if (tok !== lessonTok) return;
+        const c = chars[k];
+        const info = CI[c];
+        grid.innerHTML = '';
+        grid.className = 'rv-remind';
+        const tile = h('button', { class: 'ch xl', type: 'button', 'aria-label': c, onclick: () => sayP(c, tok) }, c);
+        grid.append(tile, info ? h('div', { class: 'rv-info' },
+          h('span', { class: 'sp-jg' }, STRUCT_NAME[info[0]] || info[0]),
+          h('span', { class: 'sp-bs' }, '部首 ', h('b', null, info[2])),
+          info[4] ? h('span', { class: 'sp-pho' }, h('b', null, info[4]), ' 帮它读音') : null) : null);
+        sub.textContent = info ? info[6] : c;
+        pop(tile);
+        await sayP(c, tok);
+        await waitP(300);
+        if (info) await sayP(info[6], tok);
+        await waitP(900);
+      }
+      if (tok !== lessonTok) return;
+      grid.className = 'rv-grid';
+      ear.hidden = false;
+      sub.textContent = LESSON.reviewTest;
+      await sayP(LESSON.reviewTest, tok);
+      if (tok === lessonTok) ask();
+    };
     (async () => {
       sub.textContent = LESSON.reviewHello;
       await waitP(300);
       await sayP(LESSON.reviewHello, tok);
-      if (tok === lessonTok) ask();
+      if (tok === lessonTok) remind();
     })();
   }
 
@@ -1457,12 +1573,16 @@
   const STEP_INFO = {
     look: { icon: '👀', name: '看一看' },
     grow: { icon: '✨', name: '变一变' },
+    split: { icon: '🧩', name: '拆一拆' },
     read: { icon: '🗣️', name: '读一读' },
     write: { icon: '✍️', name: '写一写' },
     words: { icon: '💬', name: '说一说' },
     find: { icon: '🔍', name: '找一找' },
   };
-  const stepsOf = (c) => (HZ[c] ? ['look', 'grow', 'read', 'write', 'words', 'find'] : ['read', 'write', 'find']);
+  // 有图的生字七步；有讲法的字五步；自己加的、没有讲法的字三步
+  const stepsOf = (c) => (HZ[c] ? ['look', 'grow', 'split', 'read', 'write', 'words', 'find']
+    : CI[c] ? ['split', 'read', 'write', 'words', 'find']
+      : ['read', ...(window.HANZI_STROKES && window.HANZI_STROKES[c] ? ['write'] : []), 'find']);
   const FIND_ROUNDS = [3, 4, 4, 6, 6]; // 找一找：找五次，越往后选项越多、越像
 
   // list：要认的字；o.story：认完以后读哪一关；o.done：认完以后做什么（从字卡、生字库打开时没有）
@@ -1475,7 +1595,8 @@
     Voice.prefetch(list.flatMap((c) => {
       const ln = linesOf(c);
       const d = HZ[c] || {};
-      return [d.look, d.say, ln.read, ln.count, ln.find, ...ln.words, ...ln.strokes, hearOf(c)];
+      const info = CI[c] || [];
+      return [d.look, d.say, info[5], ln.read, ln.count, ln.find, ...wordsOf(c).map(([w]) => `${w}，${w}。`), ...ln.strokes, hearOf(c)];
     }).concat(Object.values(LESSON)));
     let ci = 0;
     let si = 0;
@@ -1568,11 +1689,43 @@
           await waitP(1000);
           nextStep();
         })();
+      } else if (sid === 'split') {
+        // 拆一拆：大字里部首用橙色标出来；旁边按结构摆好部件，标出部首和帮它读音的部件
+        const [jg, parts, bs, bsName, pho, say] = CI[c];
+        const pic = h('div', { class: 'sp-char' });
+        const partTile = (g) => h('span', { class: 'sp-part' + (g === bs ? ' rad' : g === pho ? ' pho' : '') },
+          h('span', { class: 'ch md' }, g), h('small', null, g === bs ? '部首' : g === pho ? '读音' : ''));
+        const ps = [...(parts || '')];
+        const vertical = jg === '上下' || jg === '上中下';
+        const diag = ps.length ? h('div', { class: `sp-diag ${vertical ? 'col' : 'row'}` }, ps.map((g, k) => [k && !vertical && (jg === '半包围' || jg === '全包围') ? h('span', { class: 'iv-op' }, '+') : null, partTile(g)])) : null;
+        stage.append(
+          h('div', { class: 'sp-row' }, pic, diag),
+          h('div', { class: 'sp-tags' },
+            h('span', { class: 'sp-jg' }, STRUCT_NAME[jg] || jg),
+            h('span', { class: 'sp-bs' }, '部首 ', h('b', null, bs), bsName ? ' · ' + bsName : ''),
+            pho ? h('span', { class: 'sp-pho' }, h('b', null, pho), ' 帮它读音') : null));
+        const data = window.HANZI_STROKES && window.HANZI_STROKES[c];
+        if (data && window.HanziWriter) {
+          const size = Math.round(Math.min(240, window.innerWidth * (ps.length ? 0.36 : 0.5), window.innerHeight * 0.3));
+          pic.style.width = pic.style.height = size + 'px';
+          window.HanziWriter.create(pic, c, {
+            width: size, height: size, padding: Math.round(size * 0.06), showOutline: false,
+            strokeColor: '#2b2433', radicalColor: '#ff7a3d', charDataLoader: (ch, onLoad) => onLoad(window.HANZI_STROKES[ch]),
+          });
+        } else {
+          pic.append(big());
+        }
+        setSub(say);
+        (async () => {
+          await waitP(500);
+          await sayP(say, tok);
+          await waitP(1200);
+          nextStep();
+        })();
       } else if (sid === 'read') {
-        // ① 老师念：念三遍，一遍一遍停一停 ② 三只小动物各念一个，孩子听一听，谁念对了
+        // 老师领读：先说这个字念什么，再念三遍，一遍一遍停一停
         const ch = big();
-        const row = h('div', { class: 'snd-row', hidden: true });
-        stage.append(ch, row);
+        stage.append(ch);
         const intro = ln.read || LESSON.readIntro;
         setSub(intro);
         (async () => {
@@ -1588,57 +1741,8 @@
             pop(ch);
             await sayP(hear, tok);
           }
-          await waitP(800);
-          if (tok !== lessonTok) return;
-          if (d.hear) { nextStep(); return; } // 「着」这样单念不好念的字，不考读音
-          const opts = shuffle([c, ...soundOptions(c, 2)]);
-          const animals = [['🐶', LESSON.dog], ['🐱', LESSON.cat], ['🐰', LESSON.bunny]];
-          let picked = false;
-          let run = 0;
-          const cards = opts.map((x, k) => h('button', { class: 'snd-card', type: 'button', 'aria-label': animals[k][1].replace('：', '') },
-            h('span', { class: 'e' }, animals[k][0]), icon(I.speaker)));
-          const playAll = async () => {
-            const my = ++run;
-            for (let k = 0; k < cards.length; k++) {
-              if (my !== run || picked || tok !== lessonTok) return;
-              cards.forEach((b, j) => b.classList.toggle('on', j === k));
-              setSub(animals[k][1]);
-              if (!(await sayP(animals[k][1], tok)) || my !== run) return;
-              if (!(await sayP(opts[k], tok)) || my !== run) return;
-              await waitP(450);
-            }
-            cards.forEach((b) => b.classList.remove('on'));
-            if (my === run && !picked && tok === lessonTok) { setSub(LESSON.soundWho); await sayP(LESSON.soundWho, tok); }
-          };
-          cards.forEach((b, k) => b.addEventListener('click', async () => {
-            if (picked || tok !== lessonTok) return;
-            run += 1; // 停下正在念的
-            cards.forEach((x) => x.classList.remove('on'));
-            if (opts[k] === c) {
-              picked = true;
-              b.classList.add('right');
-              Sfx.ding();
-              burstAt(b, { set: ['⭐', '✨', '💛'], n: 12 });
-              setSub(LESSON.soundRight);
-              await sayP(LESSON.soundRight, tok);
-              pop(ch);
-              await sayP(hear, tok);
-              await waitP(900);
-              nextStep();
-            } else {
-              b.classList.remove('wrong');
-              void b.offsetWidth;
-              b.classList.add('wrong');
-              Sfx.oops();
-              setSub(LESSON.soundWrong);
-              if (await sayP(LESSON.soundWrong, tok)) playAll();
-            }
-          }));
-          row.append(...cards);
-          row.dataset.k = String(opts.indexOf(c)); // 给自动测试用
-          row.hidden = false;
-          setSub(LESSON.soundAsk);
-          if (await sayP(LESSON.soundAsk, tok)) playAll();
+          await waitP(1000);
+          nextStep();
         })();
       } else if (sid === 'write') {
         const target = h('div', { class: 'l-target' });
@@ -1711,8 +1815,12 @@
           })();
         }
       } else if (sid === 'words') {
-        const tiles = (d.words || []).map((w) => h('button', { class: 'iw-w big', type: 'button', 'aria-label': w, onclick: () => Voice.say(w) },
-          [...w].map((x) => h('span', { class: 'ch sm' + (x === c ? ' tg' : '') }, x))));
+        // 每个词上面有一幅会动的图，帮孩子明白这个词的意思
+        const words = wordsOf(c);
+        const lines = words.map(([w]) => `${w}，${w}。`);
+        const tiles = words.map(([w, e]) => h('button', { class: 'iw-card', type: 'button', 'aria-label': w, onclick: () => Voice.say(`${w}，${w}。`) },
+          e ? h('span', { class: 'iw-pic', 'aria-hidden': 'true' }, e) : null,
+          h('span', { class: 'iw-w big' }, [...w].map((x) => h('span', { class: 'ch sm' + (x === c ? ' tg' : '') }, x)))));
         stage.append(h('div', { class: 'iw' }, tiles));
         setSub(LESSON.wordsIntro);
         (async () => {
@@ -1721,9 +1829,9 @@
           for (let k = 0; k < tiles.length; k++) {
             if (tok !== lessonTok) return;
             tiles.forEach((t, j) => t.classList.toggle('on', j === k));
-            setSub(ln.words[k]);
+            setSub(lines[k]);
             await waitP(250);
-            await sayP(ln.words[k], tok);
+            await sayP(lines[k], tok);
             await waitP(700);
           }
           if (tok !== lessonTok) return;
@@ -1780,6 +1888,7 @@
               progress.taught[c] = Date.now();
               progress.intro[c] = (progress.intro[c] || 0) + 1;
               save();
+              addCoins(3, b);
               setSub(LESSON.findRight);
               await sayP(LESSON.findRight, tok);
               setSub(LESSON.done);
@@ -1804,160 +1913,495 @@
   function openBank() {
     const due = bankDue();
     const all = Object.keys(progress.bank).sort((a, b) => (progress.bank[b].at || 0) - (progress.bank[a].at || 0));
-    const okList = all.filter((c) => progress.bank[c].m);
-    const tile = (c) => {
+    const later = all.filter((c) => !due.includes(c));
+    const days = (b) => Math.max(1, Math.ceil(((b.due || b.m + DAY) - Date.now()) / DAY));
+    const tile = (c, showNext) => {
       const b = progress.bank[c];
-      const note = [b.n ? `求助 ${b.n} 次` : '', b.k ? '说不认识' : ''].filter(Boolean).join(' · ');
-      return h('button', { class: 'bk' + (b.m ? ' got' : ''), type: 'button', 'aria-label': c, onclick: () => openIntro([c], { done: openBank }) },
-        h('span', { class: 'ch md' + (b.m ? '' : ' practice') }, c), h('small', null, note || '　'), b.m ? h('span', { class: 'ok', html: I.check }) : null);
+      const note = showNext ? `${days(b)} 天后再见` : [b.n ? `求助 ${b.n} 次` : '', b.k ? `不认识 ${b.k} 次` : ''].filter(Boolean).join(' · ');
+      return h('button', { class: 'bk' + (showNext ? ' got' : ''), type: 'button', 'aria-label': c, onclick: () => openIntro([c], { done: openBank }) },
+        h('span', { class: 'ch md' + (showNext ? '' : ' practice') }, c), h('small', null, note || '　'), showNext ? h('span', { class: 'ok', html: I.check }) : null);
     };
     modal('sheet bank', [
       h('h2', null, '生字库'),
-      h('p', { class: 'sheet-sub' }, '读故事时求助过的字、读故事前说不认识的字，都放在这里。读新故事以前，要先把「要复习」的字复习一遍（听一听，在十个字里找一找，每个字找对两次）。点一个字可以再上一次课。'),
+      h('p', { class: 'sheet-sub' }, '求助过的字、读故事前说不认识的字、小测验没读出来的字，都放在这里。每天读新故事以前，先把今天要回顾的字认一认、找一找（在十个字里找，每个字找对两次）。认出来了，过 1、2、4、7 天……再拿出来；没认出来，就从头再来。点一个字，可以再上一次课。'),
       all.length ? null : h('p', { class: 'bk-empty' }, '还没有生字。读故事时点「求助」的字，会放到这里。'),
       due.length ? [
-        h('div', { class: 'bk-head' }, h('h3', null, `要复习（${due.length} 个）`),
-          h('button', { class: 'btn tiny', type: 'button', onclick: () => openReview(due.slice(0, 10), { then: openBank, back: openBank }) }, icon(I.replay), '复习一下')),
-        h('div', { class: 'bk-grid' }, due.map(tile)),
+        h('div', { class: 'bk-head' }, h('h3', null, `今天要回顾（${due.length} 个）`),
+          h('button', { class: 'btn tiny', type: 'button', onclick: () => openReview(due.slice(0, 10), { daily: true, then: openBank, back: openBank }) }, icon(I.replay), '开始回顾')),
+        h('div', { class: 'bk-grid' }, due.map((c) => tile(c))),
       ] : null,
-      okList.length ? [
-        h('div', { class: 'bk-head' }, h('h3', null, `复习过关的（${okList.length} 个）`),
-          h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openReview(shuffle(okList).slice(0, 10), { then: openBank, back: openBank }) }, icon(I.replay), '再考一考')),
-        h('div', { class: 'bk-grid' }, okList.map(tile)),
+      later.length ? [
+        h('div', { class: 'bk-head' }, h('h3', null, `认得了（${later.length} 个）`),
+          h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openReview(shuffle(later).slice(0, 10), { then: openBank, back: openBank }) }, icon(I.replay), '再考一考')),
+        h('div', { class: 'bk-grid' }, later.map((c) => tile(c, true))),
       ] : null,
     ]);
   }
 
-  /* ---------- 挑战：把整个故事从头到尾读一遍 ---------- */
-  // 一句一句往下读；不会的字可以求助（读完的奖励少一颗爱心），求助的字放进生字库
-  function sentencesOf(s) {
-    const out = [];
-    s.pages.forEach((p) => {
-      let cur = '';
-      const chars = [...p.text];
-      chars.forEach((c, k) => {
-        cur += c;
-        const next = chars[k + 1];
-        if ('。！？'.includes(c) && next !== '”' && next !== '」' && next !== '！' && next !== '？') { out.push(cur); cur = ''; }
-        else if ((c === '”' || c === '」') && '。！？'.includes(chars[k - 1] || '')) { out.push(cur); cur = ''; }
-      });
-      if (cur.trim()) out.push(cur);
-    });
-    return out;
-  }
-  function openChallenge(i) {
-    stopQuizUI();
-    const s = STORIES[i];
-    const tok = overlay('challenge st-' + s.stage);
-    const lines = sentencesOf(s);
-    const BONUS = 5;
-    let at = 0;
-    let helps = 0;
-    let helping = false;
-    const bar = h('div', { class: 'ch-bar' }, h('i'));
-    const count = h('span', { class: 'ch-count' });
-    const list = h('div', { class: 'ch-list', lang: 'zh-CN' });
-    // 标点粘在字上（前引号粘后面的字，句号、逗号粘前面的字），不会单独跑到下一行开头
+
+  /* ======================= 每一站的小测验 ======================= */
+  // 用这一站学过的字编的新故事。孩子大声读，家长在旁边：读不出来的字点一下（只标出来，不念）。
+  // 不认识的字不超过三个，就过关，去下一站；超过三个：这些字放进生字库，先复习，再来考。
+  const TEST_LIMIT = 3;
+  function openTest(st) {
+    const t = TESTS[st];
+    if (!t) return;
+    const tok = overlay('test st-' + st);
+    const marked = new Set();
+    const count = h('b', { class: 'ts-n' }, '0');
+    const info = h('p', { class: 'ts-count' }, '读不出来的字：', count, ` 个（超过 ${TEST_LIMIT} 个，就要先复习）`);
+    // 标点粘在字上（前引号粘后面的字，逗号、句号粘前面的字），不会单独跑到一行的开头
     const groups = (line) => {
       const out = [];
       let lead = [];
       [...line].forEach((c) => {
-        if (isHan(c)) { out.push({ c, pre: lead, post: [] }); lead = []; }
-        else if ('“「（《'.includes(c) || !out.length) lead.push(c);
-        else out[out.length - 1].post.push(c);
+        if (isHan(c)) { out.push({ c, pre: lead, post: [] }); lead = []; } else if ('“「（《'.includes(c) || !out.length) lead.push(c); else out[out.length - 1].post.push(c);
       });
-      if (lead.length && out.length) out[out.length - 1].post.push(...lead);
       return out;
     };
-    const rows = lines.map((line, k) => {
-      const row = h('p', { class: 'ch-line' }, groups(line).map((g) => h('span', { class: 'ch-w' },
-        g.pre.map((x) => h('span', { class: 'ch-p' }, x)),
-        h('span', { class: 'ch-c', onclick: (e) => tapChar(e.currentTarget, g.c, k) }, g.c),
-        g.post.map((x) => h('span', { class: 'ch-p' }, x)))));
-      list.append(row);
-      return row;
-    });
-    const helpBtn = h('button', { class: 'say help', type: 'button', 'aria-label': '求助', onclick: () => toggleHelp() }, h('span', { class: 'ic hand', html: I.help }), h('span', { class: 'lbl' }, '求助'));
-    const next = h('button', { class: 'btn big', type: 'button', onclick: () => advance() }, '读完这一句', icon(I.next));
-    const tip = h('p', { class: 'ch-tip', hidden: true }, '点一点你不会读的字');
-    function setHelping(on) {
-      helping = on;
-      if (!introEl) return;
-      introEl.classList.toggle('helping', on);
-      tip.hidden = !on;
-      helpBtn.querySelector('.lbl').textContent = on ? '不用了' : '求助';
-      if (on) Voice.say(PHRASES.helpPick);
+    const body = h('div', { class: 'ts-text', lang: 'zh-CN' }, t.lines.map((line) => h('p', { class: 'ts-line' }, groups(line).map((g) => h('span', { class: 'ts-w' },
+      g.pre.map((x) => h('span', { class: 'ts-p' }, x)),
+      h('button', { class: 'ts-c', type: 'button', 'aria-pressed': 'false', onclick: () => mark(g.c) }, g.c),
+      g.post.map((x) => h('span', { class: 'ts-p' }, x)))))));
+    function mark(c) {
+      // 同一个字只算一次：句子里一样的字一起标上；再点一下就取消
+      const on = !marked.has(c);
+      if (on) marked.add(c); else marked.delete(c);
+      body.querySelectorAll('.ts-c').forEach((b) => {
+        if (b.textContent !== c) return;
+        b.classList.toggle('x', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      count.textContent = String(marked.size);
+      info.classList.toggle('over', marked.size > TEST_LIMIT);
+      if (on) Sfx.oops(); else Sfx.tap();
     }
-    // 求助要先确认：读完的时候少得一颗爱心
-    function toggleHelp() {
-      if (helping) { setHelping(false); Voice.stop(); return; }
-      modal('ask', [
-        h('div', { class: 'ask-ic', html: I.help }),
-        h('h2', null, '不会读了吗？'),
-        h('p', { class: 'ask-cost' }, h('span', { class: 'cost' }, icon(I.heart), '−1'), h('span', null, '求助一次，读完的时候少得一颗爱心。')),
-        h('p', { class: 'ask-sub' }, '求助以后，点这一句里你不会读的那个字，只读这一个字。'),
-        h('div', { class: 'ask-btns' },
-          h('button', { class: 'btn big', type: 'button', onclick: () => { closeModal(); setHelping(true); } }, h('span', { class: 'ic hand', html: I.help }), '求助'),
-          h('button', { class: 'btn soft', type: 'button', onclick: () => { closeModal(); Voice.stop(); } }, '我再试试')),
-      ]);
-      Voice.say(PHRASES.helpAsk);
-    }
-    function tapChar(el, c, k) {
-      if (k !== at) return;
-      if (!helping && !el.classList.contains('helped')) { el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); return; }
-      if (helping) {
-        setHelping(false);
-        helps += 1;
-        bankAdd(c, 'help');
+    async function finish() {
+      const list = [...marked];
+      const pass = list.length <= TEST_LIMIT;
+      list.forEach((c) => bankAdd(c, 'test'));
+      if (pass && !progress.stationPass[st]) {
+        progress.stationPass[st] = Date.now();
+        save();
+        addCoins(15);
       }
-      list.querySelectorAll('.ch-c').forEach((t) => { if (t.textContent === c) t.classList.add('helped'); });
-      sayChar(c);
-      pop(el);
-    }
-    function show() {
-      rows.forEach((r, k) => { r.className = 'ch-line' + (k < at ? ' done' : k === at ? ' cur' : ''); });
-      count.textContent = `第 ${Math.min(at + 1, lines.length)} 句 / 共 ${lines.length} 句`;
-      bar.firstChild.style.width = (at / lines.length) * 100 + '%';
-      if (rows[at]) rows[at].scrollIntoView({ block: 'center', behavior: 'smooth' });
-      next.firstChild.textContent = at === lines.length - 1 ? '读完了' : '读完这一句';
-    }
-    function advance() {
-      if (helping) setHelping(false);
-      Sfx.page();
-      at += 1;
-      if (at < lines.length) { show(); return; }
-      done();
-    }
-    function done() {
-      const gain = Math.max(1, BONUS - helps);
-      progress.hearts += gain;
-      const c0 = progress.challenge[s.id] || { n: 0 };
-      progress.challenge[s.id] = { n: c0.n + 1, at: Date.now() };
-      save();
+      const next = STORIES.findIndex((s) => s.stage === st + 1);
       introEl.innerHTML = '';
-      introEl.append(h('div', { class: 'ch-done' },
-        h('div', { class: 'ch-crown', 'aria-hidden': 'true' }, '👑'),
-        h('h2', null, `《${s.title}》从头到尾读完啦！`),
-        h('p', { class: 'rw-hearts' }, icon(I.heart), h('b', { class: 'plus' }, '+' + gain), h('span', null, `一共 ${progress.hearts} 颗爱心`)),
-        helps ? h('p', { class: 'rw-help' }, h('span', { class: 'ic hand', html: I.help }), `求助了 ${helps} 次，这些字放进了生字库`) : h('p', { class: 'rw-help solo' }, icon(I.star), '一次也没求助！'),
+      introEl.append(h('div', { class: 'ts-done' },
+        h('div', { class: 'ts-medal', 'aria-hidden': 'true' }, pass ? '🏅' : '📚'),
+        h('h2', null, pass ? `第${st}站小测验，过关啦！` : `有 ${list.length} 个字还不太熟`),
+        list.length ? h('div', { class: 'ts-miss' }, list.map((c) => h('span', { class: 'ch md practice' }, c))) : h('p', { class: 'rw-help solo' }, icon(I.star), '一个字都没有读错！'),
+        list.length ? h('p', { class: 'ts-note' }, pass ? '这几个字放进了生字库，以后会再练一练。' : '这些字放进了生字库。先复习这些字，再来考一次。') : null,
         h('div', { class: 'rw-btns' },
-          i + 1 < STORIES.length ? h('button', { class: 'btn big', type: 'button', onclick: () => { stopIntroUI(); startStory(i + 1); } }, '下一关', icon(I.next)) : null,
-          h('button', { class: 'btn soft', type: 'button', onclick: () => { stopIntroUI(); renderMap(i); } }, icon(I.home), '回到小路'))));
-      Sfx.fanfare();
-      confettiRain();
-      sayP(LESSON.challengeDone, tok);
+          pass
+            ? (next >= 0 ? h('button', { class: 'btn big', type: 'button', onclick: () => { stopIntroUI(); startStory(next); } }, `去第${st + 1}站`, icon(I.next)) : null)
+            : h('button', { class: 'btn big', type: 'button', onclick: () => openReview(list, { then: () => openTest(st), back: () => renderMap() }) }, '去复习', icon(I.next)),
+          h('button', { class: 'btn soft', type: 'button', onclick: () => Voice.seq([t.title, ...t.lines]) }, icon(I.speaker), '听一听这个故事'),
+          h('button', { class: 'btn soft', type: 'button', onclick: () => { stopIntroUI(); Voice.stop(); renderMap(); } }, icon(I.home), '回到小路'))));
+      if (pass) { Sfx.fanfare(); confettiRain(); }
+      await sayP(pass ? LESSON.testPass : LESSON.testFail, tok);
     }
     introEl.append(
       h('header', { class: 'q-head' },
-        h('button', { class: 'rbtn', type: 'button', 'aria-label': '不读了，回到小路', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); renderMap(i); } }),
-        h('b', null, `完整读一遍 · ${s.title}`),
-        count),
-      bar,
-      list,
-      tip,
-      h('footer', { class: 'i-btns ch-btns' }, helpBtn, next));
-    show();
-    (async () => { await waitP(300); await sayP(LESSON.challengeGo, tok); })();
+        h('button', { class: 'rbtn', type: 'button', 'aria-label': '先不考了', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); renderMap(); } }),
+        h('b', null, `第${st}站 · 小测验`)),
+      h('p', { class: 'ts-guide' }, '请爸爸妈妈在旁边：孩子大声读，读不出来的字，点一下（再点一下就取消）。'),
+      h('h2', { class: 'ts-title' }, t.title),
+      body,
+      info,
+      h('footer', { class: 'i-btns' }, h('button', { class: 'btn big', type: 'button', onclick: finish }, '读完了', icon(I.next))));
+    Voice.prefetch([LESSON.testHello, LESSON.testPass, LESSON.testFail]);
+    (async () => { await waitP(300); await sayP(LESSON.testHello, tok); })();
+  }
+
+  /* ======================= 身边的字 ======================= */
+  // 主线以外：自己的名字、家人、好朋友、喜欢的故事，还可以自己加字、写故事。
+  const MINE = window.MINE || { groups: [], stories: [] };
+  const fullName = () => (KID.fullName || progress.myName || '').trim();
+  const NAME_ID = 'xn';
+  // 身边的字里的故事放在故事列表最后（第 8 站，地图上不显示）：《冰雪奇缘》、我的名字、自己写的故事
+  function syncMineStories() {
+    for (let i = STORIES.length - 1; i >= 0; i--) if (STORIES[i].stage > STAGES.length) STORIES.splice(i, 1);
+    MINE.stories.forEach((s) => STORIES.push(s));
+    const full = fullName();
+    if (full && MINE.nameStory) {
+      const fill = (t) => t.replace('{full}', full).replace('{nick}', KID.name).replace('{sur}', [...full][0]);
+      STORIES.push({ id: NAME_ID, title: '我的名字', stage: STAGES.length + 1, prize: ['🏷️', '名字'],
+        pages: MINE.nameStory.map((t, k) => ({ text: fill(t), scene: ['home', 'meadow', 'home', 'partybow'][k % 4], art: [['#kid', 50, 93, 18, k === 3 ? 'hop' : 'bob']] })) });
+    }
+    progress.myStories.forEach((m) => STORIES.push({ id: m.id, title: m.title, stage: STAGES.length + 1, prize: ['🌟', '星星'], mine: true,
+      pages: m.lines.map((text) => ({ text, scene: 'meadow', art: [] })) }));
+  }
+  // 自己加的字：联网时下载笔顺（下载不到也能认、能找，只是不能写）
+  function addStrokeData(c, d) {
+    if (!window.HANZI_STROKES) window.HANZI_STROKES = {};
+    if (d && d.strokes && !window.HANZI_STROKES[c]) window.HANZI_STROKES[c] = d;
+  }
+  Object.entries(progress.myData).forEach(([c, d]) => addStrokeData(c, d));
+  function fetchStrokes(c) {
+    if (window.HANZI_STROKES && window.HANZI_STROKES[c]) return Promise.resolve(true);
+    return fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1/${encodeURIComponent(c)}.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d || !d.strokes) return false;
+        const keep = { strokes: d.strokes, medians: d.medians, radStrokes: d.radStrokes || [] };
+        progress.myData[c] = keep;
+        addStrokeData(c, keep);
+        save();
+        return true;
+      })
+      .catch(() => false);
+  }
+  // claude.ai 里的能力（不在 claude.ai 里打开时没有）
+  const useCap = (name) => {
+    const use = window.claude && window.claude.use;
+    if (typeof use !== 'function') return Promise.resolve(null);
+    return Promise.race([use.call(window.claude, name), waitP(10000).then(() => null)]).catch(() => null);
+  };
+
+  function openMine() {
+    const tok = overlay('mine');
+    const full = fullName();
+    const tile = (c) => h('button', { class: 'ch mn-c' + (KNOWN.has(c) ? '' : ' new'), type: 'button', 'aria-label': c, onclick: () => openIntro([c], { done: openMine }) }, c);
+    const storyBtn = (id, label) => {
+      const i = STORIES.findIndex((s) => s.id === id);
+      return i < 0 ? null : h('button', { class: 'btn soft mn-story', type: 'button', onclick: () => { stopIntroUI(); startStory(i); } }, '📖 ', label, isDone(i) ? ' ✓' : '');
+    };
+    const section = (icon2, name, kids) => h('section', { class: 'mn-sec' }, h('h3', null, h('span', { 'aria-hidden': 'true' }, icon2), name), kids);
+    // 我的名字
+    const nameSec = full
+      ? section('🏷️', '我的名字', [
+        h('div', { class: 'mn-name' }, [...full].map(tile)),
+        h('div', { class: 'mn-row' }, [...(MINE.nameChars || '')].map(tile)),
+        h('div', { class: 'mn-btns' },
+          h('button', { class: 'btn soft', type: 'button', onclick: () => Voice.seq([...full]) }, icon(I.speaker), '读我的名字'),
+          storyBtn(NAME_ID, '我的名字'),
+          KID.fullName ? null : h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { progress.myName = ''; save(); syncMineStories(); openMine(); } }, '改名字')),
+      ])
+      : section('🏷️', '我的名字', [
+        h('p', { class: 'mn-note' }, '家长填一下孩子的名字（只存在这台设备上，或者你自己的 claude.ai 账号里）：'),
+        (() => {
+          const inp = h('input', { class: 'mn-input', type: 'text', maxlength: 5, placeholder: '比如：王小明', 'aria-label': '孩子的名字' });
+          const ok = h('button', { class: 'btn tiny', type: 'button' }, '好了');
+          ok.addEventListener('click', () => {
+            const v = [...inp.value].filter(isHan).join('');
+            if (!v) { toast('请写汉字名字'); return; }
+            progress.myName = v;
+            save();
+            [...v].forEach((c) => fetchStrokes(c));
+            syncMineStories();
+            openMine();
+          });
+          return h('div', { class: 'mn-add' }, inp, ok);
+        })(),
+        h('div', { class: 'mn-row' }, [...(MINE.nameChars || '')].map(tile)),
+      ]);
+    // 我加的字
+    const addInp = h('input', { class: 'mn-input', type: 'text', maxlength: 8, placeholder: '写一个字', 'aria-label': '加一个字' });
+    const addBtn = h('button', { class: 'btn tiny', type: 'button' }, '加上');
+    addBtn.addEventListener('click', async () => {
+      const add = [...addInp.value].filter((c) => isHan(c) && !progress.myChars.includes(c));
+      if (!add.length) { toast('写一个还没加过的汉字'); return; }
+      progress.myChars += add.join('');
+      save();
+      addBtn.disabled = true;
+      await Promise.all(add.map(fetchStrokes));
+      openMine();
+    });
+    introEl.append(
+      h('header', { class: 'q-head' },
+        h('button', { class: 'rbtn', type: 'button', 'aria-label': '关闭', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); renderMap(); } }),
+        h('b', null, '身边的字')),
+      h('div', { class: 'mn-body' },
+        nameSec,
+        MINE.groups.map((g) => section(g.icon, g.name, [
+          h('div', { class: 'mn-row' }, [...g.chars].map(tile)),
+          g.name === '冰雪奇缘' ? h('div', { class: 'mn-btns' }, storyBtn('x1', '冰雪奇缘')) : null,
+        ])),
+        section('➕', '我加的字', [
+          progress.myChars ? h('div', { class: 'mn-row' }, [...progress.myChars].map(tile)) : h('p', { class: 'mn-note' }, '大人和小朋友都可以加：身边看到的字、喜欢的字。'),
+          h('div', { class: 'mn-add' }, addInp, addBtn),
+        ]),
+        section('📝', '我的故事', [
+          h('div', { class: 'mn-btns' },
+            progress.myStories.map((m) => h('span', { class: 'mn-my' }, storyBtn(m.id, m.title),
+              h('button', { class: 'btn tiny soft', type: 'button', 'aria-label': `改《${m.title}》`, onclick: () => openEditor(m) }, '改'))),
+            h('button', { class: 'btn soft', type: 'button', onclick: () => openEditor() }, '＋ 写一个故事')),
+        ])));
+    Voice.prefetch([LESSON.mineHello]);
+    (async () => { await waitP(300); await sayP(LESSON.mineHello, tok); })();
+  }
+
+  // 写故事：一行是一页。在 claude.ai 里还可以请 Claude 用认识的字编一个
+  function openEditor(old) {
+    overlay('editor');
+    const title = h('input', { class: 'mn-input ed-title', type: 'text', maxlength: 10, placeholder: '故事的名字', value: old ? old.title : '', 'aria-label': '故事的名字' });
+    const text = h('textarea', { class: 'ed-text', rows: 8, 'aria-label': '故事', placeholder: '一行是一页，比如：\n可可有一只小狗。\n小狗叫跑跑。' });
+    text.value = old ? old.lines.join('\n') : '';
+    const check = h('p', { class: 'ed-check' });
+    const known = new Set([...ALL_CHARS, ...Object.keys(CI), ...progress.myChars, ...fullName()]);
+    const upd = () => {
+      const unknown = [...new Set([...text.value].filter((c) => isHan(c) && !known.has(c)))];
+      check.textContent = unknown.length ? `这些字还没学过：${unknown.join(' ')}（读的时候可以求助，也可以先加到「我加的字」里学一学）` : '';
+    };
+    text.addEventListener('input', upd);
+    upd();
+    const ai = h('button', { class: 'btn soft', type: 'button', hidden: true }, '✨ 请 Claude 帮忙编');
+    const status = h('p', { class: 'ed-status', role: 'status' });
+    useCap('sample').then((sample) => {
+      if (!sample) return;
+      ai.hidden = false;
+      ai.addEventListener('click', async () => {
+        const focus = [...new Set([...(text.value.match(/[一-鿿]/g) || []), ...progress.myChars, ...fullName()])].slice(0, 8).join('');
+        const allowed = [...known].join('');
+        const prompt = `你是给五岁小朋友编识字故事的老师。请编一个很短、很开心的故事：4 到 6 句话，每句不超过 12 个字，句子简单。\n小朋友叫${KID.name}。尽量用上这些字：${focus || '爱、好、家'}。\n除了标点，只能用下面这些字：${allowed}\n只回答 JSON，不要别的话：{"title": "不超过五个字的题目", "lines": ["第一句。", "第二句。"]}`;
+        ai.disabled = true;
+        status.textContent = 'Claude 正在编……';
+        try {
+          const r = await sample(prompt, { modelTier: 'quick' });
+          const m = (r && r.text || '').match(/\{[\s\S]*\}/);
+          const d = m ? JSON.parse(m[0]) : null;
+          if (!d || !Array.isArray(d.lines) || !d.lines.length) throw new Error('bad');
+          title.value = String(d.title || '').slice(0, 10);
+          text.value = d.lines.map((x) => String(x).trim()).filter(Boolean).slice(0, 8).join('\n');
+          upd();
+          status.textContent = '编好了！看一看，可以改一改，再点「存好」。';
+        } catch (e) {
+          status.textContent = e && e.code === 'not_granted' ? '没有同意让网页问 Claude，可以自己写。' : '这次没编好，再试一次，或者自己写。';
+        }
+        ai.disabled = false;
+      });
+    });
+    const saveBtn = h('button', { class: 'btn big', type: 'button' }, '存好', icon(I.check));
+    saveBtn.addEventListener('click', () => {
+      const lines = text.value.split(/\n+/).map((x) => x.trim()).filter(Boolean).slice(0, 12);
+      if (!lines.length) { toast('先写一句话'); return; }
+      const t = [...title.value.trim()].slice(0, 10).join('') || '我的故事';
+      if (old) Object.assign(progress.myStories.find((m) => m.id === old.id) || {}, { title: t, lines });
+      else progress.myStories.push({ id: 'm' + Date.now().toString(36), title: t, lines });
+      save();
+      syncMineStories();
+      [...new Set(lines.join('').match(/[一-鿿]/g) || [])].forEach((c) => fetchStrokes(c));
+      openMine();
+    });
+    introEl.append(
+      h('header', { class: 'q-head' },
+        h('button', { class: 'rbtn', type: 'button', 'aria-label': '不写了', html: I.close, onclick: () => openMine() }),
+        h('b', null, old ? '改故事' : '写一个故事')),
+      h('div', { class: 'mn-body ed-body' },
+        title, text, check, status,
+        h('div', { class: 'mn-btns' }, ai,
+          old ? h('button', { class: 'btn soft danger', type: 'button', onclick: () => {
+            progress.myStories = progress.myStories.filter((m) => m.id !== old.id);
+            save();
+            syncMineStories();
+            openMine();
+          } }, '删掉这个故事') : null,
+          saveBtn)));
+  }
+
+  /* ======================= 贴纸花园 ======================= */
+  // 读完故事得到的贴纸在花园里走来走去、互相说话；点一个就说出它的名字。
+  // 贴纸越多，花园越热闹：一起跳舞、排队开火车……用金币买的装饰放在花园里，可以拖来拖去。
+  const GARDEN = window.GARDEN || { talks: [], foodTalks: [], party: [], sounds: {}, shop: [], food: '', sky: '' };
+  let gardenTimers = [];
+  const gardenAfter = (ms, fn) => { const t = setTimeout(fn, ms); gardenTimers.push(t); return t; };
+  function stopGarden() { gardenTimers.forEach((t) => { clearTimeout(t); clearInterval(t); }); gardenTimers = []; }
+  function gotStickers() {
+    const seen = new Set();
+    return STORIES.filter((s, i) => isDone(i) && !seen.has(s.prize[0]) && seen.add(s.prize[0])).map((s) => s.prize);
+  }
+  const shopName = (e) => (GARDEN.shop.find((x) => x[0] === e) || [e, ''])[1];
+
+  function openGarden() {
+    overlay('garden');
+    const coinsN = h('b', null, progress.coins);
+    let moving = false;
+    const moveBtn = h('button', { class: 'btn tiny soft', type: 'button' }, '✋ 摆一摆');
+    const scene = h('div', { class: 'gd-scene' },
+      h('div', { class: 'gd-sky' }, h('span', { class: 'gd-sun' }, '🌞'), h('span', { class: 'gd-cloud c1' }, '☁️'), h('span', { class: 'gd-cloud c2' }, '☁️')),
+      h('div', { class: 'gd-grass' }));
+    const items = progress.garden.items || (progress.garden.items = []);
+    // 装饰：可以拖着摆
+    const drawDecos = () => {
+      scene.querySelectorAll('.gd-deco').forEach((d) => d.remove());
+      items.forEach((it, k) => {
+        const d = h('button', { class: 'gd-deco', type: 'button', 'aria-label': shopName(it[0]), style: `left:${it[1]}%;top:${it[2]}%;z-index:${Math.round(it[2])}` }, it[0]);
+        d.addEventListener('pointerdown', (e) => {
+          if (!moving) return;
+          e.preventDefault();
+          d.setPointerCapture(e.pointerId);
+          const r = scene.getBoundingClientRect();
+          const mv = (ev) => {
+            it[1] = Math.max(3, Math.min(97, ((ev.clientX - r.left) / r.width) * 100));
+            it[2] = Math.max(30, Math.min(96, ((ev.clientY - r.top) / r.height) * 100));
+            d.style.left = it[1] + '%';
+            d.style.top = it[2] + '%';
+            d.style.zIndex = Math.round(it[2]);
+          };
+          const up = () => { d.removeEventListener('pointermove', mv); d.removeEventListener('pointerup', up); save(); };
+          d.addEventListener('pointermove', mv);
+          d.addEventListener('pointerup', up);
+        });
+        d.addEventListener('click', () => { if (moving) return; pop(d); Voice.say(shopName(it[0])); });
+        scene.append(d);
+        void k;
+      });
+    };
+    moveBtn.addEventListener('click', () => {
+      moving = !moving;
+      scene.classList.toggle('moving', moving);
+      moveBtn.textContent = moving ? '✓ 摆好了' : '✋ 摆一摆';
+      if (moving) toast('拖一拖装饰，放到喜欢的地方');
+    });
+    // 贴纸
+    const got = gotStickers();
+    const pets = got.map(([e, name], k) => {
+      const sky = GARDEN.sky.includes(e);
+      const food = GARDEN.food.includes(e);
+      const el = h('button', { class: 'gd-pet' + (sky ? ' sky' : ''), type: 'button', 'aria-label': name }, h('span', { class: 'gd-body' }, e));
+      const p = { e, name, sky, food, el, x: 8 + Math.random() * 84, y: sky ? 10 + Math.random() * 26 : 48 + Math.random() * 44 };
+      el.style.left = p.x + '%';
+      el.style.top = p.y + '%';
+      el.style.zIndex = 100 + Math.round(p.y);
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        hopPet(p);
+        bubble(p, name);
+        const snd = GARDEN.sounds[e];
+        Voice.seq(snd ? [name, snd] : [name]);
+        Sfx.pop();
+      });
+      scene.append(el);
+      void k;
+      return p;
+    });
+    const moveTo = (p, x, y, ms) => {
+      if (x < p.x) p.el.classList.add('flip'); else p.el.classList.remove('flip');
+      p.x = x; p.y = y;
+      p.el.style.transitionDuration = (ms || 2500) + 'ms';
+      p.el.style.left = x + '%';
+      p.el.style.top = y + '%';
+      p.el.style.zIndex = 100 + Math.round(y);
+    };
+    const hopPet = (p, cls) => { p.el.classList.remove(cls || 'hop'); void p.el.offsetWidth; p.el.classList.add(cls || 'hop'); };
+    const bubble = (p, text, voice) => {
+      const old = p.el.querySelector('.gd-say');
+      if (old) old.remove();
+      const b = h('span', { class: 'gd-say', role: 'button', tabindex: '0', onclick: (ev) => { ev.stopPropagation(); Voice.say(text); } }, text);
+      p.el.append(b);
+      if (voice) Voice.say(text);
+      gardenAfter(3200, () => b.remove());
+    };
+    const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+    // 自己走走、跳跳、转转、打个盹
+    const wander = () => {
+      if (!introEl || !pets.length) return;
+      const n = Math.max(1, Math.round(pets.length / 3));
+      for (let k = 0; k < n; k++) {
+        const p = rnd(pets);
+        if (p.busy) continue;
+        const r = Math.random();
+        if (r < 0.55) moveTo(p, Math.max(5, Math.min(95, p.x + (Math.random() - 0.5) * 40)), p.sky ? 8 + Math.random() * 28 : 48 + Math.random() * 44, 2000 + Math.random() * 2000);
+        else if (r < 0.75) hopPet(p);
+        else if (r < 0.88) hopPet(p, 'spin');
+        else { const z = h('span', { class: 'gd-zz' }, '💤'); p.el.append(z); gardenAfter(2600, () => z.remove()); }
+      }
+      gardenAfter(1600, wander);
+    };
+    // 两个贴纸碰到一起，说说话；一个是吃的东西时，另一个会追着它跑
+    const talk = () => {
+      if (!introEl) return;
+      if (pets.length >= 2) {
+        const a = rnd(pets);
+        let b = rnd(pets.filter((x) => x !== a));
+        const foodPair = (a.food && !b.food) || (b.food && !a.food);
+        const lines = foodPair && GARDEN.foodTalks.length ? rnd(GARDEN.foodTalks) : rnd(GARDEN.talks);
+        let first = a;
+        let second = b;
+        if (foodPair) { first = a.food ? b : a; second = a.food ? a : b; } // 想吃的先说，吃的东西回答
+        a.busy = b.busy = true;
+        const tx = Math.max(6, Math.min(94, second.x + (second.x > 50 ? -9 : 9)));
+        moveTo(first, tx, first.sky === second.sky ? second.y : first.y, 1600);
+        gardenAfter(1700, () => { bubble(first, lines[0], true); hopPet(first); });
+        gardenAfter(4300, () => {
+          bubble(second, lines[1], true);
+          hopPet(second);
+          if (foodPair) { // 吃的东西跑掉，另一个追
+            moveTo(second, second.x > 50 ? 6 : 94, second.y, 1800);
+            gardenAfter(400, () => moveTo(first, second.x, first.y, 2000));
+          }
+        });
+        gardenAfter(6500, () => { a.busy = b.busy = false; });
+      }
+      gardenAfter(Math.max(7000, 15000 - pets.length * 400), talk);
+    };
+    // 贴纸多了：开派对、排队开火车
+    const party = () => {
+      if (!introEl) return;
+      if (pets.length >= 8) {
+        const conga = pets.length >= 15 && Math.random() < 0.5;
+        Voice.say(conga ? GARDEN.party[2] : rnd(GARDEN.party.slice(0, 2)));
+        if (conga) {
+          pets.filter((p) => !p.sky).forEach((p, k) => {
+            p.busy = true;
+            moveTo(p, 4 + (k % 12) * 2, 78, 1200);
+            gardenAfter(1400 + k * 120, () => moveTo(p, 92 - ((pets.length - k) % 12) * 2, 78, 5000));
+            gardenAfter(7500, () => { p.busy = false; });
+          });
+        } else {
+          pets.forEach((p, k) => gardenAfter(k * 80, () => hopPet(p, 'dance')));
+          confettiRain();
+        }
+      }
+      gardenAfter(26000 + Math.random() * 10000, party);
+    };
+    introEl.append(
+      h('header', { class: 'q-head gd-head' },
+        h('button', { class: 'rbtn', type: 'button', 'aria-label': '回到小路', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); renderMap(); } }),
+        h('b', null, '贴纸花园'),
+        h('span', { class: 'gd-coins', title: '金币' }, h('i', { 'aria-hidden': 'true' }, '🪙'), coinsN)),
+      scene,
+      ...(got.length ? [] : [h('p', { class: 'gd-empty' }, '读完故事得到的贴纸，会到花园里来玩。')]),
+      h('footer', { class: 'gd-btns' },
+        h('button', { class: 'btn', type: 'button', onclick: () => openShop(() => { coinsN.textContent = progress.coins; drawDecos(); }) }, '🛒 商店'),
+        moveBtn,
+        h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openStickers() }, '📒 贴纸册')));
+    drawDecos();
+    gardenAfter(600, wander);
+    gardenAfter(2500, talk);
+    gardenAfter(9000, party);
+  }
+
+  // 商店：用金币买装饰。小东西几个金币，大东西要攒好几天
+  function openShop(onBuy) {
+    const box = modal('sheet shop', [h('h2', null, '花园商店'), h('div', { class: 'shop-body' })]);
+    const body = box.querySelector('.shop-body');
+    const draw = () => {
+      body.innerHTML = '';
+      body.append(
+        h('p', { class: 'sheet-sub' }, '学会一个字、读完一个故事、过一个小测验，都能得到金币。', h('b', { class: 'shop-have' }, ` 🪙 ${progress.coins}`)),
+        h('div', { class: 'shop-grid' }, GARDEN.shop.map(([e, name, price]) => {
+          const can = progress.coins >= price;
+          const b = h('button', { class: 'shop-item' + (can ? '' : ' poor'), type: 'button', 'aria-label': `${name}，${price} 个金币` },
+            h('span', { class: 'shop-e' }, e), h('span', { class: 'shop-n' }, name), h('span', { class: 'shop-p' }, `🪙 ${price}`));
+          b.addEventListener('click', () => {
+            if (!can) { Sfx.oops(); Voice.say(GARDEN.shopPoor); return; }
+            progress.coins -= price;
+            const items = progress.garden.items || (progress.garden.items = []);
+            items.push([e, 8 + Math.random() * 84, 52 + Math.random() * 40]);
+            save();
+            Sfx.ding();
+            burstAt(b, { set: ['✨', '🪙', '⭐'], n: 10 });
+            Voice.say(GARDEN.shopBuy);
+            draw();
+            if (onBuy) onBuy();
+          });
+          return b;
+        })));
+    };
+    draw();
+    Voice.say(GARDEN.shopHello);
   }
 
   /* ======================= 小挑战 ======================= */
@@ -1976,7 +2420,7 @@
     const fromTitle = shuffle(pool.filter((c) => !PRACTICE.has(c) && s.title.includes(c)));
     const rest = shuffle(pool.filter((c) => !PRACTICE.has(c) && !s.title.includes(c)));
     const targets = [...new Set([...first, ...fromTitle.slice(0, 1), ...rest])].slice(0, 3);
-    Q = { s, i: R.i, pool, targets, n: 0, firstTry: 0, missed: false, busy: false, self: R.self, base: R.base, hearts: R.hearts, helps: R.helps };
+    Q = { s, i: R.i, pool, targets, n: 0, firstTry: 0, missed: false, busy: false, self: R.self, base: R.base, spent: R.spent, helps: R.helps };
     Voice.prefetch([PHRASES.quizAsk, PHRASES.quizAgain, ...PHRASES.praise, ...targets]);
     quizEl = h('div', { class: `quiz st-${s.stage}` });
     document.body.append(quizEl);
@@ -2048,13 +2492,18 @@
     const i = Q.i;
     const firstTime = !progress.done[s.id];
     // 这一关的爱心（求助用掉的不算）+ 小挑战一次答对的
-    const gain = Q.hearts + Q.firstTry;
+    // 这一关的爱心（求助已经从攒下的爱心里扣过了）+ 小挑战一次答对的；金币：读完 5 个，全靠自己读再加 2 个
+    const gain = Q.base + Q.firstTry;
+    const coins = 5 + (Q.helps ? 0 : 2);
+    addCoins(coins);
     const before = progress.hearts;
     progress.hearts += gain;
     progress.done[s.id] = { n: ((progress.done[s.id] || {}).n || 0) + 1, at: Date.now() };
     save();
     const medal = MEDALS.find(([n]) => before < n && progress.hearts >= n);
-    const nextI = i + 1 < STORIES.length ? i + 1 : -1;
+    const nextI = isMain(i) && isMain(i + 1) ? i + 1 : -1;
+    // 读完一站的最后一关：先去考这一站的小测验
+    const needTest = isMain(i) && TESTS[s.stage] && stageDone(s.stage) && !stagePassed(s.stage) ? s.stage : 0;
 
     stopReading();
     quizEl.innerHTML = '';
@@ -2073,14 +2522,15 @@
       h('p', { class: 'rw-name' }, firstTime ? `得到新贴纸「${s.prize[1]}」！` : `又见到「${s.prize[1]}」啦！`),
       h('p', { class: 'rw-hearts' }, icon(I.heart), h('b', { class: 'plus' }, '+' + gain), h('span', null, `一共 ${progress.hearts} 颗爱心`)),
       Q.self ? h('p', { class: 'rw-help' + (Q.helps ? '' : ' solo') },
-        Q.helps ? [h('span', { class: 'ic hand', html: I.help }), `求助了 ${Q.helps} 次，用掉 ${Q.base - Q.hearts} 颗爱心`]
+        Q.helps ? [h('span', { class: 'ic hand', html: I.help }), `求助了 ${Q.helps} 次，用掉 ${Q.spent} 颗爱心`]
           : [icon(I.star), '全靠自己读完，一次也没求助！']) : null,
       medal ? h('p', { class: 'rw-medal' }, `爱心满 ${medal[0]} 颗，得到${medal[2]} ${medal[1]}`) : null,
-      nextI < 0 ? h('p', { class: 'rw-all' }, '所有故事都读完啦！') : null,
+      nextI < 0 && isMain(i) && !needTest ? h('p', { class: 'rw-all' }, '所有故事都读完啦！') : null,
+      needTest ? h('p', { class: 'rw-all' }, `第${s.stage}站的故事都读完啦！考一考小测验，就能去下一站。`) : null,
       h('div', { class: 'rw-btns' },
-        nextI >= 0 ? h('button', { class: 'btn big', type: 'button', onclick: () => { stopQuizUI(); startStory(nextI); } }, '下一关', icon(I.next)) : null,
-        // 挑战：把整个故事从头到尾读一遍（「再读一遍」在封面上还有）
-        h('button', { class: 'btn soft chal', type: 'button', onclick: () => openChallenge(i) }, progress.challenge[s.id] ? '👑 再挑战' : '📖 完整读一遍'),
+        needTest ? h('button', { class: 'btn big', type: 'button', onclick: () => { stopQuizUI(); openTest(needTest); } }, '📝 去小测验', icon(I.next))
+          : nextI >= 0 ? h('button', { class: 'btn big', type: 'button', onclick: () => { stopQuizUI(); startStory(nextI); } }, '下一关', icon(I.next)) : null,
+        h('button', { class: 'btn soft', type: 'button', onclick: () => { stopQuizUI(); openReader(i); } }, icon(I.replay), '再读一遍'),
         h('button', { class: 'btn soft', type: 'button', onclick: () => { stopQuizUI(); renderMap(nextI >= 0 ? nextI : i); } }, icon(I.home), '回到小路')));
     quizEl.append(
       h('div', { class: 'rays', 'aria-hidden': 'true' }),
@@ -2102,7 +2552,7 @@
         gift.classList.add('gone');
         sticker.hidden = false;
         reveal.hidden = false;
-        Voice.seq([PHRASES.rewardPrefix, s.prize[1], LESSON.challengeAsk]);
+        Voice.seq([PHRASES.rewardPrefix, s.prize[1]]);
         burstAt(sticker, { set: ['✨', '⭐', '💖'], n: 12 });
       }, 650);
     });
@@ -2227,9 +2677,9 @@
         row('家长陪读', sw('set-together', settings.together, (v) => { settings.together = v; save(); }),
           '关着（默认）：孩子先自己读，不会的字点「求助」，用一颗爱心换一个字的读音。打开：故事页有「读一读」可以整页朗读，点字直接发音，不扣爱心。'),
         row('读故事前挑生字', sw('set-intro', settings.intro, (v) => { settings.intro = v; save(); }),
-          `读新故事以前，把故事里可能不认识的字列出来（五六个），${KID.name}自己点不认识的字，再一个一个上课：看一看、变一变、读一读（听小动物念，挑出念对的）、写一写（一笔一笔说笔画名称，再用手指描）、说一说、找一找（找五次）。上过课的字以后不再拿出来。`),
-        row('读新故事前先复习', sw('set-review', settings.review, (v) => { settings.review = v; save(); if (view === 'map') renderMap(); }),
-          '读故事时求助过的字、说不认识的字，会放进「生字库」。读新故事以前，先把这些字复习一遍：听一听，在十个字里找出来，每个字要找对两次才过关。'),
+          `读新故事以前，把故事里可能不认识的字列出来（五六个），${KID.name}自己点不认识的字，再一个一个上课：看一看、变一变、拆一拆（结构、部首、帮它读音的部件）、读一读、写一写（一笔一笔说笔画名称，再用手指描）、说一说（每个词配一幅会动的图）、找一找（找五次）。上过课的字以后不再拿出来。`),
+        row('每日回顾', sw('set-review', settings.review, (v) => { settings.review = v; save(); if (view === 'map') renderMap(); }),
+          `读故事时求助过的字、说不认识的字、小测验没读出来的字，会放进「生字库」。每天读新故事以前，先做今日回顾：每个字讲一句为什么这样写、这样读，再在十个字里找出来，每个字要找对两次。认出来的字隔 1、2、4、7 天……再回顾。`),
         row('读到哪一关', (() => {
           const cur = currentLevel();
           const sel = h('select', { id: 'set-level', 'aria-label': '选择从哪一关接着读' }, STAGES.map((st, si) => h('optgroup', { label: st.name },
@@ -2241,15 +2691,20 @@
           const apply = () => {
             const k = Number(sel.value);
             STORIES.forEach((x, j) => {
+              if (!isMain(j)) return; // 身边的字里的故事不动
               if (j < k) { if (!progress.done[x.id]) progress.done[x.id] = { n: 1, at: Date.now() }; } else delete progress.done[x.id];
             });
+            // 前面几站的小测验算过了，这一站和后面的重新考
+            for (let st = 1; st <= STAGES.length; st++) {
+              if (st < STORIES[k].stage) { if (!progress.stationPass[st]) progress.stationPass[st] = Date.now(); } else delete progress.stationPass[st];
+            }
             save();
             closeModal();
             renderMap(k);
             toast(`设好了：从第 ${k + 1} 关《${STORIES[k].title}》接着读`);
           };
           return h('div', { class: 'lv-set' }, sel, h('button', { class: 'btn tiny', type: 'button', onclick: apply }, '设好'));
-        })(), '换了设备、或者进度没了的时候用：选的这一关前面的都算读完了，从这一关接着读（后面的关重新锁上）。爱心和生字库不变。'),
+        })(), '换了设备、或者进度没了的时候用：选的这一关前面的都算读完了（前面几站的小测验也算过了），从这一关接着读，后面的关重新锁上。爱心、金币和生字库不变。'),
         row('音效', sw('set-sfx', settings.sfx, (v) => { settings.sfx = v; save(); applySettings(); if (v) Sfx.ding(); })),
         voices.length
           ? row('设备语音', h('div', { class: 'voice-pick' }, pick()), '只在没有录音的话上用到')
@@ -2330,7 +2785,12 @@
   }
   function start(data) {
     watchHostBadge();
-    Cloud.init(() => { if (view === 'map' && !introEl && !currentModal) renderMap(); });
+    syncMineStories();
+    Cloud.init(() => {
+      Object.entries(progress.myData).forEach(([c, d]) => addStrokeData(c, d));
+      syncMineStories();
+      if (view === 'map' && !introEl && !currentModal) renderMap();
+    });
     loadUserPhotos().then(() => { if (view === 'map' && userPhotos.length) renderMap(); });
     renderMap();
     if (data && data.view === 'reader' && data.story != null && STORIES[data.story]) openReader(data.story, data.page || 0);

@@ -11,17 +11,18 @@ import vm from 'node:vm';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ctx = { window: {} };
 vm.createContext(ctx);
-for (const f of ['js/chars.js', 'js/stories.js', 'js/phrases.js', 'js/strokes.js', 'js/hanzi.js']) {
+for (const f of ['js/chars.js', 'js/stories.js', 'js/phrases.js', 'js/strokes.js', 'js/hanzi.js', 'js/charinfo.js', 'js/mine.js', 'js/tests.js', 'js/garden.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), ctx, { filename: f });
 }
-const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS, HANZI_INTRO = {}, LESSON = {}, lessonLines, STROKE_NAMES = {}, strokeKey } = ctx.window;
+const { CHAR_BATCHES, STORIES, SAY_ALONE = {}, SAY_FIX = [], PHRASES, PIC_WORDS, HANZI_INTRO = {}, LESSON = {}, lessonLines, STROKE_NAMES = {}, strokeKey, CHAR_INFO = {}, MINE = { stories: [] }, STATION_TESTS = {}, GARDEN = {} } = ctx.window;
 const fix = (s) => SAY_FIX.reduce((acc, [re, to]) => acc.replace(re, to), s);
 const isHan = (c) => /\p{Script=Han}/u.test(c);
 const items = new Map();
 const add = (key, say, kind) => { if (key && !items.has(key)) items.set(key, { key, say: kind === 'char' ? say || key : fix(say || key), kind }); };
 
 const chars = CHAR_BATCHES.flatMap((b) => [...b.chars]);
-STORIES.forEach((s) => {
+// 主线的故事 + 身边的字里的故事（《冰雪奇缘》）
+[...STORIES, ...MINE.stories].forEach((s) => {
   add(s.title, s.title, 'title');
   add(s.prize[1], s.prize[1], 'word');
   s.pages.forEach((p) => {
@@ -35,8 +36,8 @@ STORIES.forEach((s) => {
   });
   [...s.title].forEach((c) => { if (isHan(c) && !chars.includes(c)) chars.push(c); });
 });
-// 认生字用到的字（有的还不在故事里）
-Object.keys(HANZI_INTRO).forEach((c) => { if (!chars.includes(c)) chars.push(c); });
+// 认生字用到的字（有的还不在故事里）、有讲解的字（身边的字……）
+[...Object.keys(HANZI_INTRO), ...Object.keys(CHAR_INFO)].forEach((c) => { if (!chars.includes(c)) chars.push(c); });
 chars.forEach((c) => add(c, SAY_ALONE[c] || c, 'char'));
 // 认生字（老师上课，语速慢一点：teach）：看一看、变一变、读一读、写一写、说一说、找一找
 Object.values(LESSON).forEach((w) => add(w, null, 'teach'));
@@ -53,6 +54,18 @@ Object.entries(HANZI_INTRO).forEach(([c, d]) => {
   ln.words.forEach((w) => add(w, null, 'teach'));
   if (d.hear) add(d.hear, d.hear, 'word');
 });
+// 拆一拆的讲解、复习时的一句话、带图的词（每个字都有）
+Object.values(CHAR_INFO).forEach((v) => {
+  add(v[5], null, 'teach');
+  add(v[6], null, 'teach');
+  v[7].forEach(([w]) => add(`${w}，${w}。`, null, 'teach'));
+});
+// 每一站的小测验（测完以后可以听一听）
+Object.values(STATION_TESTS).forEach((t) => { add(t.title, t.title, 'title'); t.lines.forEach((l) => add(l, l, 'page')); });
+// 贴纸花园：贴纸说的话、小动物的叫声、商店
+[...(GARDEN.talks || []), ...(GARDEN.foodTalks || [])].flat().forEach((w) => add(w, null, 'phrase'));
+[...(GARDEN.party || []), ...Object.values(GARDEN.sounds || {}), GARDEN.shopHello, GARDEN.shopBuy, GARDEN.shopPoor].forEach((w) => add(w, null, 'phrase'));
+(GARDEN.shop || []).forEach(([, name]) => add(name, name, 'word'));
 Object.values(PIC_WORDS).forEach((w) => add(w, w, 'word'));
 // js/phrases.js 里所有固定的话（表扬、求助的提示……）
 Object.values(PHRASES).flat().forEach((w) => add(w, null, 'phrase'));
