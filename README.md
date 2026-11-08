@@ -166,6 +166,6 @@ fonts/kidkai.woff2    裁剪过的楷体（霞鹜文楷 GB，SIL OFL 1.1，许�
 tools/                检查故事、录音、裁剪字体、打包成单个 HTML 文件
 ```
 
-打包成一个可以直接发送的 HTML 文件（录音也在里面）：`node tools/build-single.mjs`（输出到 `dist/`）。有 `media/` 时照片也会放进去，加 `--no-media` 就不放。
+打包成一个可以直接发送的 HTML 文件（录音也在里面）：`node tools/build-single.mjs`（输出到 `dist/`）。有 `media/` 时照片也会放进去，加 `--no-media` 就不放。录音太大、一个文件超过 16 MB 放不进 claude.ai 页面时，加 `--split-audio`：录音另外写成几个 `audio-data-N.js`，和网页一起发布。
 
 用到的别人的东西：笔顺动画和手指描字用 [Hanzi Writer](https://hanziwriter.org) 3.7.2（MIT 许可，`js/vendor/LICENSE-hanzi-writer.txt`；改了一处：笔画遮罩的引用只写 `#id`，不带网页地址，不然在 claude.ai App 里笔画画不出来）；笔画数据来自 hanzi-writer-data 2.0.1（源自 Make Me a Hanzi，Arphic Public License，`js/vendor/ARPHICPL-hanzi-writer-data.txt`）；笔画名称来自 cnchar-order 3.2.6 的数据（MIT，`js/vendor/LICENSE-cnchar.txt`），按课本的叫法整理过（横钩/横撇、横斜钩/横折弯钩、女字旁的提、走之的平捺……），两份数据的笔顺也按每一笔的走向互相核对过；字体见上面。认生字的图、讲法、例词和老师说的话都是这里自己写的；`js/charinfo.js` 里每个字的结构和部件是这里自己整理的，拆字时参考过 Make Me a Hanzi 的字典（没有放进仓库）。《冰雪奇缘》的小故事是自己写的几句话，没有用电影的台词和图。

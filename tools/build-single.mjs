@@ -4,6 +4,8 @@
  * 用法：node tools/build-single.mjs [输出路径]      默认输出 dist/识字故事屋.html
  *      node tools/build-single.mjs out.html --fragment   只要 <head>/<body> 里面的内容（给 claude.ai 页面用）
  *      加 --no-media：不放孩子的照片和视频（media/ 文件夹），适合发给别人
+ *      加 --split-audio：录音不塞进网页，另外写成几个 audio-data-N.js（每个不到 12 MB），放在输出文件旁边，
+ *                        网页用 <script src> 读进来（claude.ai 页面一个文件不能超过 16 MB）
  * media/ 文件夹不进 git：照片只在打包出来的文件里，发这个文件就等于发了照片。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -14,7 +16,9 @@ import vm from 'node:vm';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const fragment = args.includes('--fragment');
+const splitAudio = args.includes('--split-audio');
 const out = resolve(args.find((a) => !a.startsWith('--')) || join(root, 'dist', '识字故事屋.html'));
+mkdirSync(dirname(out), { recursive: true });
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
 let css = read('css/style.css');
@@ -30,7 +34,27 @@ vm.runInContext(read('js/audio-index.js'), ctx);
 const ids = [...new Set(Object.values(ctx.window.AUDIO_INDEX || {}).map((e) => e[0]))];
 const audioData = {};
 for (const id of ids) audioData[id] = readFileSync(join(root, 'audio', id + '.mp3')).toString('base64');
-html = html.replace('<script src="js/audio-index.js"></script>', () => `<script src="js/audio-index.js"></script>\n<script>window.AUDIO_DATA = ${JSON.stringify(audioData)};</script>`);
+let audioTags = `<script>window.AUDIO_DATA = ${JSON.stringify(audioData)};</script>`;
+const audioFiles = [];
+if (splitAudio) {
+  // 分成几块，每块不到 12 MB；按顺序读进来，读完以后 window.AUDIO_DATA 和放在网页里时一样
+  const chunks = [{}];
+  let size = 0;
+  for (const id of ids) {
+    if (size > 0 && size + audioData[id].length > 12e6) { chunks.push({}); size = 0; }
+    chunks[chunks.length - 1][id] = audioData[id];
+    size += audioData[id].length + 20;
+  }
+  chunks.forEach((c, k) => {
+    const name = `audio-data-${k + 1}.js`;
+    writeFileSync(join(dirname(out), name), `window.AUDIO_DATA = Object.assign(window.AUDIO_DATA || {}, ${JSON.stringify(c)});\n`);
+    audioFiles.push(name);
+  });
+  audioTags = audioFiles.map((n) => `<script src="${n}"></script>`).join('\n');
+  // 录音比较大，读进来要几秒：先显示一句话（app.js 画地图时会换掉）
+  html = html.replace('<div id="app"></div>', '<div id="app"><p style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font:28px/1.4 sans-serif;color:#2b6cb0;background:#bfe6ff">正在打开识字故事屋……</p></div>');
+}
+html = html.replace('<script src="js/audio-index.js"></script>', () => `<script src="js/audio-index.js"></script>\n${audioTags}`);
 // 孩子的照片和视频（media/media.js 里列的文件）变成 data: 地址放进网页
 const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
 const mediaJs = join(root, 'media', 'media.js');
@@ -67,6 +91,6 @@ if (fragment) {
   const body = html.match(/<body>([\s\S]*?)<\/body>/)[1];
   html = `${keep.join('\n')}\n${body.trim()}\n`;
 }
-mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, html);
 console.log(`${out}（${Math.round(Buffer.byteLength(html) / 1024)} KB${mediaKB ? `，含照片和视频 ${Math.round(mediaKB)} KB` : '，没有照片'}）`);
+for (const n of audioFiles) console.log(`  ${join(dirname(out), n)}（${Math.round(readFileSync(join(dirname(out), n)).length / 1024)} KB）`);
