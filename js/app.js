@@ -543,6 +543,7 @@
           h('p', null, `${KID.name}认识 ${KNOWN_LIST.length} 个字 · ${mainCount} 个故事 · 读完 ${doneCount} 个`))),
       h('div', { class: 'tools' },
         h('div', { class: 'hearts', title: '爱心和金币' }, icon(I.heart), h('b', null, progress.hearts), h('span', { class: 'coin-e', 'aria-hidden': 'true' }, '🪙'), h('b', { class: 'coins-n' }, progress.coins)),
+        toolBtn(I.gift, '宝箱', openStickers),
         toolBtn(I.flower, '花园', openGarden),
         (() => {
           const b = toolBtn(I.book, '生字库', openBank);
@@ -2366,7 +2367,7 @@
       h('footer', { class: 'gd-btns' },
         h('button', { class: 'btn', type: 'button', onclick: () => openShop(() => { coinsN.textContent = progress.coins; drawDecos(); }) }, '🛒 商店'),
         moveBtn,
-        h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openStickers() }, '📒 贴纸册')));
+        h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openStickers() }, '🎁 宝箱')));
     drawDecos();
     gardenAfter(600, wander);
     gardenAfter(2500, talk);

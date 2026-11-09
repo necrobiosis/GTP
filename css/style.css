@@ -1689,9 +1689,10 @@ label.btn { cursor: pointer; }
   .rv-opt.show, .snd-card.right, .f-opt.right, .rv-opt.right, .ch-crown { animation: none !important; }
 }
 @media (max-width: 430px) {
-  /* 手机竖着：爱心 + 四个按钮放一行 */
-  .map-head .tools { gap: 6px; flex-wrap: nowrap; }
-  .map-head .tool { width: 56px; height: 58px; font-size: 13px; border-radius: 16px; }
+  /* 手机竖着：爱心和金币一行，五个按钮（宝箱、花园、生字库、字卡、家长）平分下一行 */
+  .map-head .tools { width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 6px; }
+  .map-head .tools .hearts { grid-column: 1 / -1; justify-self: start; }
+  .map-head .tool { width: auto; height: 58px; font-size: 13px; border-radius: 16px; }
   .map-head .tool .ic svg { width: 25px; height: 25px; }
   .map-head .hearts { height: 50px; padding: 0 12px 0 9px; font-size: 22px; gap: 4px; }
   .map-head .hearts .ic svg { width: 24px; height: 24px; }
