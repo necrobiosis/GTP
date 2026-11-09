@@ -22,10 +22,20 @@ window.Speech = (function () {
   function isChinese(v) {
     return /^(zh|cmn)/i.test(v.lang) || /chinese|中文|普通话|國語|国语/i.test(v.name);
   }
+  // 声音好不好：高音质（Premium）> 增强（Enhanced）> 普通；普通话（zh-CN）排前面
+  function quality(v) {
+    const id = `${v.voiceURI} ${v.name}`;
+    return /premium|高音质|高音質|優質/i.test(id) ? 2 : /enhanced|增强|增強|加強/i.test(id) ? 1 : 0;
+  }
+  function score(v) {
+    return quality(v) * 10 + (/zh[-_]cn|cmn/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 0 : 1);
+  }
+  let auto = false;   // 用手机自带的声音读、家长又没选声音时：自动用最好的那个
   function refresh() {
     if (!ok) return;
-    voices = synth.getVoices().filter(isChinese).filter((v) => !/zh[-_]hk|yue/i.test(v.lang));
-    chosen = pref ? voices.find((v) => v.voiceURI === pref) || null : null;
+    voices = synth.getVoices().filter(isChinese).filter((v) => !/zh[-_]hk|yue/i.test(v.lang))
+      .sort((a, b) => score(b) - score(a));
+    chosen = (pref && voices.find((v) => v.voiceURI === pref)) || (auto ? voices[0] || null : null);
     listeners.forEach((f) => f());
   }
   if (ok) {
@@ -106,6 +116,8 @@ window.Speech = (function () {
     get rate() { return rate; },
     setRate(r) { rate = r; },
     setVoice(uri) { pref = uri || ''; refresh(); },
+    setAuto(on) { auto = !!on; refresh(); },
+    quality,
     onVoices(f) { listeners.push(f); },
   };
 })();
@@ -150,7 +162,7 @@ window.Voice = (function () {
   // 放在网上的录音：快要用到的先下载到内存里（prefetch），点的时候马上能放，不用等网络
   const fetched = {};
   function prefetch(texts) {
-    if (DATA || typeof fetch !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return;
+    if (DATA || device || typeof fetch !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return;
     (texts || []).forEach((t) => {
       const e = INDEX[t];
       if (!e || fetched[e[0]] !== undefined) return;
@@ -167,11 +179,25 @@ window.Voice = (function () {
     return useBlob ? blobOf(id) : 'data:audio/mpeg;base64,' + DATA[id];
   };
   const fixText = (t) => FIX.reduce((s, [re, to]) => s.replace(re, to), t);
-  // 设备语音念的文字：单个字用同音字（多音字不读错），句子按 SAY_FIX 改
-  const spoken = (t) => ([...t].length === 1 ? ALONE[t] || t : fixText(t));
+  // 设备语音念的文字：单个字用同音字（多音字不读错），句子按 SAY_FIX 改；笔画名称去掉「笔画·」
+  const spoken = (t) => ([...t].length === 1 ? ALONE[t] || t : fixText(t.replace(/^笔画·/, '')));
+  // 家长可以选：用录好的声音（默认），还是用手机自带的声音（比如 iPhone 的「月（高音质）」）
+  let device = false;
+  const useDevice = () => device && Speech.ok && Speech.voices.length > 0;
+  function sayDevice(text, o, tk) {
+    const one = [...text].length === 1;
+    return Speech.speak(spoken(text), {
+      rate: Speech.rate * (one ? 0.92 : o.slow ? 0.9 : 1),
+      onstart: () => { if (tk === token && o.onstart) o.onstart(null); },
+      onboundary: o.onboundary,
+      onend: () => { if (tk === token && o.onend) o.onend(); },
+    });
+  }
 
   function unlock() {
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* 旧浏览器没有 */ }
+    // 用手机自带的声音时：第一次点屏幕也要「打开」设备语音（iPhone / iPad 只在点击里才肯出声）
+    if (device) Speech.unlock();
     if (unlocked) return;
     unlocked = true;
     const a = player();
@@ -183,20 +209,14 @@ window.Voice = (function () {
     if (!Object.keys(INDEX).length) Speech.unlock();
   }
 
-  // 念一句：有录音放录音，没有就用设备语音。o: { onstart(entry), onend(), onboundary() }
+  // 念一句：有录音放录音，没有就用设备语音（家长选了「手机自带的声音」时都用设备语音）。
+  // o: { onstart(entry), onend(), onboundary(), slow（老师上课的话，设备语音念慢一点） }
   function say(text, o) {
     o = o || {};
     stop();
     const tk = token;
-    const entry = INDEX[text];
-    if (!entry) {
-      return Speech.speak(spoken(text), {
-        rate: [...text].length === 1 ? Speech.rate * 0.92 : undefined,
-        onstart: () => { if (tk === token && o.onstart) o.onstart(null); },
-        onboundary: o.onboundary,
-        onend: () => { if (tk === token && o.onend) o.onend(); },
-      });
-    }
+    const entry = useDevice() ? null : INDEX[text];
+    if (!entry) return sayDevice(text, o, tk);
     const a = player();
     let started = false;
     let finished = false;
@@ -282,6 +302,8 @@ window.Voice = (function () {
     unlock,
     prefetch,
     has: (t) => !!INDEX[t],
+    setDevice(on) { device = !!on; Speech.setAuto(device); },
+    get device() { return useDevice(); },
     entry: (t) => INDEX[t] || null,
     time: () => (el ? el.currentTime : 0),
     get clips() { return Object.keys(INDEX).length; },

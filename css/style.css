@@ -1477,6 +1477,7 @@ label.btn { cursor: pointer; }
   animation: fadein .5s ease both; animation-delay: .6s;
 }
 .iw { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 18px; }
+.l-words .iw { display: grid; grid-template-columns: repeat(var(--cols, 3), auto); justify-content: center; align-content: center; gap: 14px 16px; }
 .iw-w {
   display: inline-flex; gap: 2px; padding: 8px 12px; border: 0; border-radius: 18px; cursor: pointer;
   background: #fff; box-shadow: 0 5px 0 var(--paper-edge); font-size: clamp(30px, 6vmin, 44px);
@@ -1564,7 +1565,7 @@ label.btn { cursor: pointer; }
 .l-target svg { display: block; }
 .l-count { margin: 0; font: 24px var(--font-display); color: var(--tangerine-deep); min-height: 1.3em; }
 /* 说一说 */
-.iw-w.big { font-size: clamp(44px, 10vmin, 80px); padding: 10px 16px; transition: transform .25s, box-shadow .25s; }
+.iw-w.big { font-size: var(--wf, clamp(44px, 10vmin, 80px)); padding: 10px 16px; transition: transform .25s, box-shadow .25s; }
 .iw-w.on { transform: scale(1.12); box-shadow: 0 6px 0 var(--tangerine-deep), 0 0 0 4px var(--sun); }
 /* 找一找 */
 .l-find .q-opts { font-size: clamp(80px, 18vmin, 140px); }
@@ -1725,29 +1726,64 @@ label.btn { cursor: pointer; }
 .node.test .name { font-family: var(--font-display); font-size: 22px; }
 
 /* ================= 上课：拆一拆 ================= */
-.sp-row { display: flex; align-items: center; justify-content: center; gap: clamp(14px, 4vw, 40px); flex-wrap: wrap; }
-.sp-char { border-radius: 18px; background: #fffdf7; box-shadow: inset 0 0 0 4px var(--grid, #f3c9b8), 0 8px 0 rgba(120, 84, 30, .15); }
+/* 部件卡片（上面一幅会动的图，中间是部件，下面是名字）从它在字里的那一边飞进来，再合成大字 */
+.sp2 { display: flex; align-items: center; justify-content: center; gap: clamp(8px, 2.4vw, 26px); }
+.sp2.below { flex-direction: column; gap: 4px; }
+.sp-parts { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.sp-parts.col { flex-direction: column; gap: 0; }
+.sp-plus, .sp-eq { font: 400 clamp(26px, 5vmin, 42px)/1 var(--font-display); color: var(--tangerine-deep); animation: spfade .4s ease both; }
+.sp-plus { animation-delay: var(--d, .4s); }
+.sp-eq { animation-delay: var(--t, 1s); }
+.sp2.below .sp-eq { transform: rotate(90deg); }
+.sp-card {
+  --s: 110px; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: var(--s); padding: 6px 4px 8px; border-radius: 20px; background: #fff; box-shadow: 0 5px 0 #ead7b4; cursor: pointer;
+  animation: spin .75s cubic-bezier(.3, 1.4, .6, 1) both; animation-delay: var(--d, 0s);
+  transition: transform .3s cubic-bezier(.3, 1.5, .6, 1), box-shadow .3s;
+}
+.sp-card .sp-e { font-size: calc(var(--s) * .42); line-height: 1.15; animation: bob 2.6s ease-in-out infinite; animation-delay: calc(var(--d, 0s) + .8s); }
+.sp-card .sp-g { font: 400 calc(var(--s) * .38)/1.1 var(--font-kai); color: var(--ink); }
+.sp-card small { font: calc(var(--s) * .1 + 6px)/1.2 var(--font-display); color: var(--ink-soft); text-align: center; }
+.sp-card.solo { padding: 10px 8px 12px; }
+.sp-card.solo .sp-e { font-size: calc(var(--s) * .6); }
+.sp-card.rad { box-shadow: 0 5px 0 #ffb98f, inset 0 0 0 3px #ff9a63; }
+.sp-card.rad .sp-g, .sp-card.rad small { color: #e8601c; }
+.sp-card.pho { box-shadow: 0 5px 0 #9cc8ff, inset 0 0 0 3px #73b4ff; }
+.sp-card.pho .sp-g, .sp-card.pho small { color: #2b6cc4; }
+.sp-card.on { z-index: 1; transform: scale(1.14) translateY(-4px); box-shadow: 0 0 0 5px var(--sun), 0 8px 0 var(--tangerine-deep); }
+.sp-card.on .sp-e { animation: spwiggle .6s ease-in-out 2; }
+.sp-card.hop { animation: hopx .5s ease; }
+.sp-card.from-l { --fx: -80px; } .sp-card.from-r { --fx: 80px; } .sp-card.from-t { --fy: -70px; } .sp-card.from-b { --fy: 70px; }
+.sp-card.from-m { --fy: 50px; } .sp-card.from-o { --fx: -60px; --fy: -30px; } .sp-card.from-i { --fx: 60px; --fy: 30px; }
+@keyframes spin { from { opacity: 0; transform: translate(var(--fx, 0), var(--fy, 0)) scale(.5) rotate(-8deg); } to { opacity: 1; transform: none; } }
+@keyframes spfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spwiggle { 0%, 100% { transform: rotate(0) scale(1); } 25% { transform: rotate(-12deg) scale(1.18); } 75% { transform: rotate(12deg) scale(1.18); } }
+@keyframes hopx { 0%, 100% { transform: none; } 40% { transform: translateY(-14px) scale(1.06); } }
+.sp-char { flex: none; border-radius: 18px; background: #fffdf7; box-shadow: inset 0 0 0 4px var(--grid, #f3c9b8), 0 8px 0 rgba(120, 84, 30, .15); transition: box-shadow .4s; }
+.sp2 .sp-char { animation: lpop .7s cubic-bezier(.3, 1.5, .6, 1) both; animation-delay: var(--t, 1s); }
+.sp-char.glow { box-shadow: inset 0 0 0 4px var(--sun), 0 0 0 7px rgba(255, 200, 60, .45), 0 8px 0 rgba(120, 84, 30, .15); }
 .sp-char svg { display: block; }
-.sp-diag { display: flex; align-items: center; gap: 8px; padding: 10px; border: 3px dashed #e8c99a; border-radius: 18px; }
-.sp-diag.col { flex-direction: column; }
-.sp-part { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: clamp(44px, 9vmin, 72px); }
-.sp-part small { min-height: 1.2em; font: 15px var(--font-display); color: var(--ink-soft); }
-.sp-part.rad .ch { --grid: #ff9a63; background-color: #fff0e6; color: #e8601c; }
-.sp-part.rad small { color: #e8601c; }
-.sp-part.pho .ch { --grid: #73b4ff; background-color: #eef6ff; color: #2b6cc4; }
-.sp-part.pho small { color: #2b6cc4; }
-.sp-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; }
+.sp-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 10px; animation: spfade .5s ease both; animation-delay: calc(var(--t, 1s) + .4s); }
 .sp-jg, .sp-bs, .sp-pho { padding: 5px 14px; border-radius: 999px; font: 20px var(--font-display); background: #fff; box-shadow: 0 3px 0 var(--paper-edge); }
 .sp-jg { color: #6a3fc0; }
 .sp-bs { color: #e8601c; }
 .sp-bs b, .sp-pho b { font: 400 1.1em var(--font-kai); }
 .sp-pho { color: #2b6cc4; }
+@media (max-width: 480px) {
+  .sp-jg, .sp-bs, .sp-pho { padding: 4px 11px; font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-card, .sp-card .sp-e, .sp-plus, .sp-eq, .sp2 .sp-char, .sp-tags { animation: none !important; }
+}
 
 /* ================= 上课：说一说（词上面有会动的图） ================= */
 .iw-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 14px 12px; border: 0; border-radius: 24px; background: rgba(255, 255, 255, .7); cursor: pointer; transition: transform .25s, box-shadow .25s; }
 .iw-card .iw-w { pointer-events: none; }
-.iw-pic { font-size: clamp(56px, 12vmin, 104px); line-height: 1.1; animation: bob 2.4s ease-in-out infinite; filter: drop-shadow(0 6px 6px rgba(120, 80, 20, .18)); }
+.iw-pic { font-size: var(--pf, clamp(56px, 12vmin, 104px)); line-height: 1.1; animation: bob 2.4s ease-in-out infinite; filter: drop-shadow(0 6px 6px rgba(120, 80, 20, .18)); }
 .iw-card:nth-child(2) .iw-pic { animation-delay: .5s; }
+.iw-card:nth-child(3) .iw-pic { animation-delay: 1s; }
+.iw-card:nth-child(4) .iw-pic { animation-delay: .3s; }
+.iw-card:nth-child(5) .iw-pic { animation-delay: .8s; }
 .iw-card.on { transform: scale(1.1); box-shadow: 0 0 0 5px var(--sun), 0 8px 0 var(--tangerine-deep); background: #fff; }
 .iw-card.on .iw-pic { animation: lpop .7s cubic-bezier(.3, 1.5, .6, 1), bob 2.4s ease-in-out .7s infinite; }
 
@@ -1755,6 +1791,13 @@ label.btn { cursor: pointer; }
 .rv-remind { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .rv-remind .ch.xl { font-size: clamp(110px, 28vmin, 200px); }
 .rv-info { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.pm { display: flex; align-items: center; justify-content: center; gap: 6px; animation: spfade .5s ease both; }
+.pm-p { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px 4px 8px; border-radius: 999px; background: #fff; box-shadow: 0 3px 0 var(--paper-edge); }
+.pm-p i { font-style: normal; font-size: 28px; line-height: 1; }
+.pm-p b { font: 400 30px/1.1 var(--font-kai); color: var(--ink); }
+.pm-p small { font: 18px var(--font-display); color: var(--ink-soft); }
+.pm-p.rad b { color: #e8601c; }
+.pm-plus { font: 26px var(--font-display); color: var(--tangerine-deep); }
 
 /* ================= 每一站的小测验 ================= */
 .ts-guide { margin: 4px 0 0; max-width: 760px; text-align: center; font: 17px var(--font-ui); color: var(--ink-soft); background: #fff7e0; padding: 8px 14px; border-radius: 14px; }

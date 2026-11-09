@@ -18,6 +18,7 @@
   const NUM = '一二三四五六七八九十';
   const SKIP_QUIZ = new Set([...'了的只干几']);
   const RATES = [0.62, 0.8, 0.98];
+  const PLAY_RATES = [0.85, 1, 1.15]; // 录音放的快慢：慢、正常、快
   const STAGES = [
     { name: '第一站 · 小芽', note: '一页一句，短短的' },
     { name: '第二站 · 花朵', note: '一页一两句' },
@@ -72,7 +73,8 @@
   };
   // together：家长陪读（故事页有「读一读」、点字直接发音）；默认关，孩子先自己读，不会的字再求助
   // intro：读故事前先挑生字、上课；review：读新故事前先复习生字库
-  const DEFAULTS = { rate: 1, sfx: true, voice: '', together: false, intro: true, review: true };
+  // engine：0 用录好的声音；1 用手机（平板）自带的中文声音
+  const DEFAULTS = { rate: 1, sfx: true, voice: '', engine: 0, together: false, intro: true, review: true };
   const settings = {};
   function loadState(st) {
     Object.keys(FIELDS).forEach((k) => {
@@ -144,7 +146,8 @@
   function applySettings() {
     Speech.setRate(RATES[settings.rate] || 0.8);
     Speech.setVoice(settings.voice);
-    Voice.setRate([0.85, 1, 1.15][settings.rate] || 1);
+    Voice.setRate(PLAY_RATES[settings.rate] || 1);
+    Voice.setDevice(settings.engine === 1);
     Sfx.enabled = settings.sfx;
   }
   applySettings();
@@ -1223,10 +1226,28 @@
   const linesOf = (c) => (window.lessonLines ? window.lessonLines(c) : { read: '', count: '', find: '', words: [], strokes: [] });
   const strokeName = (key) => key.replace(/^笔画·/, '');
   const CI = window.CHAR_INFO || {};
+  const PART_INFO = window.PART_INFO || {};
+  const PART_SOLO = window.PART_SOLO || {};
   // 能上课的字：有讲法的、或者有笔顺的（自己加的字联网下载了笔顺）
   const canTeach = (c) => !!(HZ[c] || CI[c] || (window.HANZI_STROKES && window.HANZI_STROKES[c]));
   // 说一说的词：[词, 图]
   const wordsOf = (c) => (CI[c] ? CI[c][7] : ((HZ[c] && HZ[c].words) || []).map((w) => [w, '']));
+  // 回顾时的小提示：部件的图一排（☁️云 + 💪力），比上课时简单
+  function partsMini(c) {
+    const info = CI[c];
+    if (!info) return null;
+    const ps = [...(info[1] || '')];
+    const over = info[8] || {};
+    if (!ps.length) {
+      const pic = PART_SOLO[c] || PART_INFO[c];
+      return pic ? h('div', { class: 'pm' }, h('span', { class: 'pm-p' }, h('i', null, pic[0]), h('small', null, pic[1]))) : null;
+    }
+    return h('div', { class: 'pm' }, ps.flatMap((g, k) => {
+      const pic = over[g] || PART_INFO[g] || ['', g];
+      const el = h('span', { class: 'pm-p' + (g === info[2] ? ' rad' : '') }, h('i', null, pic[0]), h('b', null, g));
+      return k ? [h('span', { class: 'pm-plus' }, '+'), el] : [el];
+    }));
+  }
   const STRUCT_NAME = { 独体: '独体字', 左右: '左右结构', 上下: '上下结构', 左中右: '左中右结构', 上中下: '上中下结构', 半包围: '半包围结构', 全包围: '全包围结构' };
   // 故事里所有的字（都有录音、笔顺、拼音）
   const ALL_CHARS = [...new Set(STORIES.flatMap((s) => hanOf(s.title + storyText(s))))];
@@ -1262,7 +1283,7 @@
     if (pendingSay) { const p = pendingSay; pendingSay = null; p(false); }
     if (!text || tok !== lessonTok) { res(false); return; }
     pendingSay = res;
-    Voice.say(text, { onend: () => { if (pendingSay === res) pendingSay = null; res(true); } });
+    Voice.say(text, { slow: true, onend: () => { if (pendingSay === res) pendingSay = null; res(true); } });
   });
   const waitP = (ms) => new Promise((res) => setTimeout(res, ms));
   function stopIntroUI() {
@@ -1510,10 +1531,11 @@
         grid.innerHTML = '';
         grid.className = 'rv-remind';
         const tile = h('button', { class: 'ch xl', type: 'button', 'aria-label': c, onclick: () => sayP(c, tok) }, c);
-        grid.append(tile, info ? h('div', { class: 'rv-info' },
+        const pho = info && info[4] ? info[4].replace('~', '') : '';
+        grid.append(tile, info ? partsMini(c) : null, info ? h('div', { class: 'rv-info' },
           h('span', { class: 'sp-jg' }, STRUCT_NAME[info[0]] || info[0]),
           h('span', { class: 'sp-bs' }, '部首 ', h('b', null, info[2])),
-          info[4] ? h('span', { class: 'sp-pho' }, h('b', null, info[4]), ' 帮它读音') : null) : null);
+          pho ? h('span', { class: 'sp-pho' }, h('b', null, pho), info[4].charAt(0) === '~' ? ' 读起来有点像' : ' 帮它读音') : null) : null);
         sub.textContent = info ? info[6] : c;
         pop(tile);
         await sayP(c, tok);
@@ -1581,8 +1603,8 @@
     find: { icon: '🔍', name: '找一找' },
   };
   // 有图的生字七步；有讲法的字五步；自己加的、没有讲法的字三步
-  const stepsOf = (c) => (HZ[c] ? ['look', 'grow', 'split', 'read', 'write', 'words', 'find']
-    : CI[c] ? ['split', 'read', 'write', 'words', 'find']
+  const stepsOf = (c) => (HZ[c] ? ['look', 'grow', 'read', 'split', 'write', 'words', 'find']
+    : CI[c] ? ['read', 'split', 'write', 'words', 'find']
       : ['read', ...(window.HANZI_STROKES && window.HANZI_STROKES[c] ? ['write'] : []), 'find']);
   const FIND_ROUNDS = [3, 4, 4, 6, 6]; // 找一找：找五次，越往后选项越多、越像
 
@@ -1691,23 +1713,90 @@
           nextStep();
         })();
       } else if (sid === 'split') {
-        // 拆一拆：大字里部首用橙色标出来；旁边按结构摆好部件，标出部首和帮它读音的部件
-        const [jg, parts, bs, bsName, pho, say] = CI[c];
+        // 拆一拆：每个部件一张会动的小卡片，从它在字里的那一边飞进来；老师讲到哪个部件，哪张卡片就亮起来；最后合成这个字
+        const info = CI[c];
+        const [jg, partStr, bs, bsName, phoRaw, say] = info;
+        const over = info[8] || {};
+        const pho = (phoRaw || '').replace('~', '');
+        const phoLike = (phoRaw || '').charAt(0) === '~';
+        const ps = [...(partStr || '')];
+        const solo = !ps.length;
+        const vert = jg === '上下' || jg === '上中下';
+        const wrapped = jg === '半包围' || jg === '全包围';
+        const picOf = (g) => over[g] || PART_INFO[g] || ['', g];
+        const dirOf = (k, n) => (wrapped ? (k ? 'i' : 'o')
+          : vert ? (k === 0 ? 't' : k === n - 1 ? 'b' : 'm')
+            : (k === 0 ? 'l' : k === n - 1 ? 'r' : 'm'));
+        // 卡片和大字有多大：按这一步真正能用的地方（去掉下面一行标签）和部件的个数算
+        const box = stage.getBoundingClientRect();
+        const W = Math.min(box.width - 8, 900);
+        const H = Math.max(84, Math.min(box.height - 78, 460));
+        const n = Math.max(1, ps.length);
+        const cardH = (x) => x * 1.12 + 26; // 卡片的高：图 + 部件 + 名字
+        const cardMax = Math.max(110, Math.min(160, H * 0.4)); // 地方大（iPad 竖着）就大一点
+        const charMax = Math.max(200, Math.min(300, H * 0.78));
+        let cardS;
+        let charS;
+        let below = false;
+        let vertical = vert;
+        if (solo) {
+          cardS = Math.min(cardMax + 10, (H - 26) / 1.2, W * 0.38);
+          charS = Math.min(charMax, H * 0.95, W * 0.44);
+        } else {
+          if (vertical) {
+            const rows = Math.min(n, 3); // 四个部件时，中间两个放一行（亮：亠 / 口 冖 / 几）
+            cardS = Math.min(cardMax, ((H - (rows - 1) * 24) / rows - 26) / 1.12, W * (n > 3 ? 0.2 : 0.3));
+            const groupW = n > 3 ? cardS * 2 + 30 : cardS;
+            charS = Math.min(charMax, W - groupW - 56, H * 0.95);
+            if (cardS < 58) vertical = false; // 太矮（手机横着）：排成一行
+          }
+          if (!vertical) {
+            cardS = Math.min(cardMax, (W - (n - 1) * 30 - 12) / n, (H - 26) / 1.12);
+            charS = Math.min(charMax, W - n * cardS - (n - 1) * 30 - 60, H * 0.95);
+            if (charS < Math.min(140, cardS * 1.3)) {
+              // 横着放不下：大字放到下面
+              below = true;
+              cardS = Math.min(cardS, (H - 40) / 2.4);
+              charS = Math.min(170, H - cardH(cardS) - 34);
+            }
+          }
+        }
+        const tChar = (solo ? 0.5 : n * 0.45) + 0.35;
+        const mkCard = (g, k) => {
+          const [e, name] = solo ? (PART_SOLO[c] || PART_INFO[c] || ['', '']) : picOf(g);
+          const nm = (name || '').split('，');
+          const mean = (nm[1] || '').replace(/^是/, '');
+          const label = solo ? name : nm[0] === g ? mean : [nm[0], mean].filter(Boolean).join(' · ');
+          const el = h('div', {
+            class: `sp-card from-${solo ? 'l' : dirOf(k, ps.length)}${solo ? ' solo' : ''}${!solo && g === bs ? ' rad' : ''}${!solo && g === pho ? ' pho' : ''}`,
+            style: `--s:${Math.round(cardS)}px;--d:${(k * 0.45 + 0.1).toFixed(2)}s`,
+          },
+          h('span', { class: 'sp-e', 'aria-hidden': 'true' }, e),
+          solo ? null : h('span', { class: 'sp-g' }, g),
+          label ? h('small', null, label) : null);
+          // 飞进来以后去掉进场动画，不然「亮起来」的放大不起作用
+          el.addEventListener('animationend', (ev) => { if (ev.target === el) el.style.animation = 'none'; });
+          el.addEventListener('click', () => { Sfx.pop(); el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop'); });
+          return el;
+        };
+        const cards = solo ? [mkCard(c, 0)] : ps.map(mkCard);
+        const plus = (k) => h('span', { class: 'sp-plus', 'aria-hidden': 'true', style: `--d:${(k * 0.45).toFixed(2)}s` }, '+');
+        const joined = (list, k0) => list.flatMap((el, k) => (k ? [plus(k0 + k), el] : [el]));
+        const group = h('div', { class: `sp-parts ${vertical ? 'col' : 'row'}` },
+          vertical && cards.length > 3
+            ? [cards[0], plus(1), h('div', { class: 'sp-parts row' }, joined(cards.slice(1, -1), 1)), plus(cards.length - 1), cards[cards.length - 1]]
+            : joined(cards, 0));
         const pic = h('div', { class: 'sp-char' });
-        const partTile = (g) => h('span', { class: 'sp-part' + (g === bs ? ' rad' : g === pho ? ' pho' : '') },
-          h('span', { class: 'ch md' }, g), h('small', null, g === bs ? '部首' : g === pho ? '读音' : ''));
-        const ps = [...(parts || '')];
-        const vertical = jg === '上下' || jg === '上中下';
-        const diag = ps.length ? h('div', { class: `sp-diag ${vertical ? 'col' : 'row'}` }, ps.map((g, k) => [k && !vertical && (jg === '半包围' || jg === '全包围') ? h('span', { class: 'iv-op' }, '+') : null, partTile(g)])) : null;
         stage.append(
-          h('div', { class: 'sp-row' }, pic, diag),
-          h('div', { class: 'sp-tags' },
+          h('div', { class: `sp2${below ? ' below' : ''}`, style: `--t:${tChar.toFixed(2)}s` },
+            group, h('span', { class: 'sp-eq', 'aria-hidden': 'true' }, '='), pic),
+          h('div', { class: 'sp-tags', style: `--t:${tChar.toFixed(2)}s` },
             h('span', { class: 'sp-jg' }, STRUCT_NAME[jg] || jg),
             h('span', { class: 'sp-bs' }, '部首 ', h('b', null, bs), bsName ? ' · ' + bsName : ''),
-            pho ? h('span', { class: 'sp-pho' }, h('b', null, pho), ' 帮它读音') : null));
+            pho ? h('span', { class: 'sp-pho' }, h('b', null, pho), phoLike ? ' 读起来有点像' : ' 帮它读音') : null));
         const data = window.HANZI_STROKES && window.HANZI_STROKES[c];
+        const size = Math.round(Math.max(90, charS));
         if (data && window.HanziWriter) {
-          const size = Math.round(Math.min(240, window.innerWidth * (ps.length ? 0.36 : 0.5), window.innerHeight * 0.3));
           pic.style.width = pic.style.height = size + 'px';
           window.HanziWriter.create(pic, c, {
             width: size, height: size, padding: Math.round(size * 0.06), showOutline: false,
@@ -1717,10 +1806,51 @@
           pic.append(big());
         }
         setSub(say);
+        // 讲解里每个部件第一次出现的地方（同一个部件有两个时，第二张卡片找第二次出现的地方）
+        let from = Math.max(0, say.indexOf('结构'), say.indexOf('独体字'));
+        const marks = solo ? [] : ps.map((g) => {
+          const nm = (picOf(g)[1] || '').split('，')[0];
+          const at = [g, nm].filter(Boolean).map((x) => say.indexOf(x, from)).filter((i) => i >= 0);
+          if (!at.length) return -1;
+          const i = Math.min(...at);
+          from = i + 1;
+          return i;
+        });
         (async () => {
-          await waitP(500);
-          await sayP(say, tok);
-          await waitP(1200);
+          await waitP(tChar * 1000 + 700);
+          if (tok !== lessonTok) return;
+          const timers = [];
+          const ok = await new Promise((res) => {
+            if (pendingSay) { const p = pendingSay; pendingSay = null; p(false); }
+            pendingSay = res;
+            Voice.say(say, {
+              slow: true,
+              onstart: (entry) => {
+                if (tok !== lessonTok) return;
+                const dur = entry ? entry[1] / (PLAY_RATES[settings.rate] || 1) : estimateTimes(say).total / 1000;
+                marks.forEach((at, k) => {
+                  if (at < 0) return;
+                  timers.push(setTimeout(() => {
+                    if (tok === lessonTok) cards.forEach((el, j) => el.classList.toggle('on', j === k));
+                  }, (at / say.length) * dur * 1000));
+                });
+              },
+              // 设备语音会告诉我们念到第几个字：跟着它亮，比估计的时间准
+              onboundary: (e) => {
+                if (tok !== lessonTok || e.charIndex == null) return;
+                timers.forEach(clearTimeout);
+                let k = -1;
+                marks.forEach((at, j) => { if (at >= 0 && at <= e.charIndex) k = j; });
+                if (k >= 0) cards.forEach((el, j) => el.classList.toggle('on', j === k));
+              },
+              onend: () => { if (pendingSay === res) pendingSay = null; res(true); },
+            });
+          });
+          timers.forEach(clearTimeout);
+          cards.forEach((el) => el.classList.remove('on'));
+          if (!ok || tok !== lessonTok) return;
+          pic.classList.add('glow');
+          await waitP(1300);
           nextStep();
         })();
       } else if (sid === 'read') {
@@ -1822,7 +1952,21 @@
         const tiles = words.map(([w, e]) => h('button', { class: 'iw-card', type: 'button', 'aria-label': w, onclick: () => Voice.say(`${w}，${w}。`) },
           e ? h('span', { class: 'iw-pic', 'aria-hidden': 'true' }, e) : null,
           h('span', { class: 'iw-w big' }, [...w].map((x) => h('span', { class: 'ch sm' + (x === c ? ' tg' : '') }, x)))));
-        stage.append(h('div', { class: 'iw' }, tiles));
+        // 三到五个词：按这一步能用的地方，挑放几列，字和图能有多大
+        const box = stage.getBoundingClientRect();
+        const W = box.width - 12;
+        const H = box.height - 12;
+        const L = Math.max(...words.map(([w]) => [...w].length));
+        let best = { cols: 1, F: 0 };
+        for (let cols = 1; cols <= tiles.length; cols++) {
+          const rows = Math.ceil(tiles.length / cols);
+          const cw = (W - (cols - 1) * 16) / cols;
+          const chh = (H - (rows - 1) * 14) / rows;
+          const F = Math.min(80, (chh - 50) / 2.65, (cw - 64) / (L * 1.28));
+          if (F > best.F + 2) best = { cols, F };
+        }
+        const F = Math.max(26, Math.floor(best.F));
+        stage.append(h('div', { class: 'iw', style: `--cols:${best.cols};--wf:${F}px;--pf:${Math.round(F * 1.25)}px` }, tiles));
         setSub(LESSON.wordsIntro);
         (async () => {
           await waitP(400);
@@ -2649,7 +2793,7 @@
         Voice.unlock();
         status.textContent = '正在放……';
         Voice.say(PHRASES.hello, {
-          onstart: (entry) => { status.textContent = entry ? '正在放录好的声音……' : '正在用设备语音读……'; },
+          onstart: (entry) => { status.textContent = entry ? '正在放录好的声音……' : '正在用手机自带的声音读……'; },
           onend: () => {
             status.textContent = Voice.lastError
               ? `录音放不出来（${Voice.lastError}），改用了设备语音。`
@@ -2657,15 +2801,21 @@
           },
         });
       };
+      // 手机自带的声音：高音质、增强的排在前面（Speech.voices 已经排好了）
+      const vName = (v) => {
+        const q = Speech.quality(v);
+        const tag = q === 2 ? '高音质' : q === 1 ? '增强' : '';
+        return `${v.name}${tag && !/高音质|增强|premium|enhanced/i.test(v.name) ? `（${tag}）` : ''} · ${v.lang}`;
+      };
       const pick = () => {
-        const sel = h('select', { id: 'set-voice', 'aria-label': '选择设备语音' },
-          h('option', { value: '' }, '系统默认的中文声音'),
+        const sel = h('select', { id: 'set-voice', 'aria-label': '选择手机自带的声音' },
+          h('option', { value: '' }, voices[0] ? `自动：${vName(voices[0])}` : '自动'),
           voices.map((v) => {
-            const op = h('option', { value: v.voiceURI }, `${v.name}（${v.lang}）`);
-            if (Speech.voice && v.voiceURI === Speech.voice.voiceURI) op.selected = true;
+            const op = h('option', { value: v.voiceURI }, vName(v));
+            if (settings.voice && v.voiceURI === settings.voice) op.selected = true;
             return op;
           }));
-        sel.addEventListener('change', () => { settings.voice = sel.value; save(); applySettings(); Speech.speak('你好，我们来读故事。'); });
+        sel.addEventListener('change', () => { settings.voice = sel.value; save(); applySettings(); Voice.unlock(); Voice.say(PHRASES.hello); });
         return sel;
       };
       // 空的一行（null）不放进去，不然会显示成文字 "null"
@@ -2674,11 +2824,25 @@
           h('button', { class: 'btn tiny', type: 'button', onclick: test }, icon(I.speaker), '听一听'),
           status),
           Voice.clips ? `故事、字和表扬的话都录好了音（${Voice.clips} 句），不用设备语音也能读。` : '没有录音，会用设备自带的中文语音。'),
+        row('谁来读', seg(['录好的声音', '手机自带的声音'], settings.engine === 1 ? 1 : 0, (k) => {
+          settings.engine = k;
+          save();
+          applySettings();
+          Voice.unlock();
+          Voice.say(PHRASES.hello);
+        }), settings.engine === 1
+          ? '所有的话都用这台手机（平板）自带的中文声音读。iPhone / iPad：在「设置 → 辅助功能 → 朗读内容 → 声音 → 中文」里下载「高音质」的声音（比如「月」），这里就能选到。自带的声音偶尔会把多音字念错。'
+          : '录好的声音是电脑合成以后一句一句检查过的。也可以改成手机自带的声音（比如 iPhone 里下载好的「月（高音质）」）。'),
+        settings.engine === 1
+          ? (voices.length
+            ? row('手机的声音', h('div', { class: 'voice-pick' }, pick()), '排在前面的是高音质、增强的声音。选好会读一句给你听。')
+            : row('手机的声音', h('p', { class: 'warn' }, '这个浏览器里没有找到中文声音，现在还是用录好的声音。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音；如果下载了还是没有，说明这个 App 里的网页用不了手机的声音，可以换 Safari 打开试试。')))
+          : null,
         row('朗读速度', seg(['慢', '正常', '快'], settings.rate, (k) => { settings.rate = k; save(); applySettings(); Voice.say(STORIES[0].pages[0].text); })),
         row('家长陪读', sw('set-together', settings.together, (v) => { settings.together = v; save(); }),
-          '关着（默认）：孩子先自己读，不会的字点「求助」，用一颗爱心换一个字的读音。打开：故事页有「读一读」可以整页朗读，点字直接发音，不扣爱心。'),
+          '关着（默认）：孩子先自己读，不会的字点「求助」，用五颗爱心换一个字的读音。打开：故事页有「读一读」可以整页朗读，点字直接发音，不扣爱心。'),
         row('读故事前挑生字', sw('set-intro', settings.intro, (v) => { settings.intro = v; save(); }),
-          `读新故事以前，把故事里可能不认识的字列出来（五六个），${KID.name}自己点不认识的字，再一个一个上课：看一看、变一变、拆一拆（结构、部首、帮它读音的部件）、读一读、写一写（一笔一笔说笔画名称，再用手指描）、说一说（每个词配一幅会动的图）、找一找（找五次）。上过课的字以后不再拿出来。`),
+          `读新故事以前，把故事里可能不认识的字列出来（五到八个），${KID.name}自己点不认识的字，再一个一个上课：看一看、变一变、读一读、拆一拆（结构、部首，每个部件配一幅会动的图）、写一写（一笔一笔说笔画名称，再用手指描）、说一说（每个词配一幅会动的图）、找一找（找五次）。上过课的字以后不再拿出来。`),
         row('每日回顾', sw('set-review', settings.review, (v) => { settings.review = v; save(); if (view === 'map') renderMap(); }),
           `读故事时求助过的字、说不认识的字、小测验没读出来的字，会放进「生字库」。每天读新故事以前，先做今日回顾：每个字讲一句为什么这样写、这样读，再在十个字里找出来，每个字要找对两次。认出来的字隔 1、2、4、7 天……再回顾。`),
         row('读到哪一关', (() => {
@@ -2707,9 +2871,8 @@
           return h('div', { class: 'lv-set' }, sel, h('button', { class: 'btn tiny', type: 'button', onclick: apply }, '设好'));
         })(), '换了设备、或者进度没了的时候用：选的这一关前面的都算读完了（前面几站的小测验也算过了），从这一关接着读，后面的关重新锁上。爱心、金币和生字库不变。'),
         row('音效', sw('set-sfx', settings.sfx, (v) => { settings.sfx = v; save(); applySettings(); if (v) Sfx.ding(); })),
-        voices.length
-          ? row('设备语音', h('div', { class: 'voice-pick' }, pick()), '只在没有录音的话上用到')
-          : Voice.clips ? null : row('设备语音', h('p', { class: 'warn' }, '没有找到中文语音。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音。')),
+        Voice.clips || settings.engine === 1 || voices.length ? null
+          : row('设备语音', h('p', { class: 'warn' }, '没有找到中文语音。iPad / iPhone：设置 → 辅助功能 → 朗读内容 → 声音 → 中文，下载一个声音。')),
         row(`${KID.name}的照片`, (() => {
           const input = h('input', { type: 'file', accept: 'image/*', multiple: true, id: 'set-photos', class: 'sr-only' });
           input.addEventListener('change', () => {
