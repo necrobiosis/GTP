@@ -1,0 +1,6 @@
+{
+  "engine": "azure",
+  "azure_voice": "zh-CN-XiaoxiaoNeural",
+  "azure_region": "eastus",
+  "keep_original": ["小虫", "月儿"]
+}

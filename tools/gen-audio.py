@@ -15,6 +15,9 @@
       https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh/raw/main/config.json
   还需要 ffmpeg。
 
+现在大部分的话改用微软 Azure 的「晓晓」录（tools/gen-audio-azure.py）；tools/voices.json 里 engine 是 azure 时，
+这个脚本只录 keep_original 里写的那几句（保留原来声音的），别的录音不动。加 --all 才会全部用这里的声音重录。
+
 运行：
   .venv/bin/python tools/gen-audio.py              只录新加的或改过的话，删掉用不到的旧录音
   .venv/bin/python tools/gen-audio.py --g2p        只打印每句话的拼音（检查多音字）
@@ -449,7 +452,13 @@ def main():
     ap.add_argument("--g2p", action="store_true", help="只打印拼音")
     ap.add_argument("--check", metavar="ASR_DIR", help="用 sherpa-onnx paraformer 识别模型核对录音")
     ap.add_argument("--force", action="store_true", help="全部重新录")
+    ap.add_argument("--all", action="store_true", help="不管 tools/voices.json，所有的话都用这里的声音录")
     args = ap.parse_args()
+
+    # tools/voices.json：大部分的话用 Azure 录时，这里只录要保留原来声音的那几句
+    cfg_file = ROOT / "tools" / "voices.json"
+    cfg = json.loads(cfg_file.read_text(encoding="utf-8")) if cfg_file.exists() else {}
+    mine = None if args.all or cfg.get("engine") != "azure" else set(cfg.get("keep_original", []))
 
     from misaki import zh
     g2p = zh.ZHG2P(version="1.1")
@@ -469,6 +478,10 @@ def main():
     index, made, warn = {}, 0, []
     for it in items:
         key, say, kind = it["key"], it["say"], it["kind"]
+        if mine is not None and key not in mine:
+            if key in old:
+                index[key] = old[key]  # 别的声音录的：原样留着
+            continue
         ph0, _ = g2p(say)
         ph, fver = phone_fix(ph0, with_ver=True)
         cid = clip_id(say, kind, fver)
@@ -514,7 +527,7 @@ def main():
     for w in warn:
         print("注意：", w)
     if args.check:
-        check(items, index, Path(args.check))
+        check([it for it in items if it["key"] in index], index, Path(args.check))
 
 
 def check(items, index, asr_dir):

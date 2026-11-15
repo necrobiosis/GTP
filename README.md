@@ -129,7 +129,12 @@
    这些字以后就不再算「新字」。
 2. **加新故事**：在 `js/stories.js` 的 `STORIES` 末尾照着已有的格式加；文件开头写了背景、道具、动作都有哪些。可以开一个新的 `stage: 7`（第七站，记得在 `js/app.js` 的 `STAGES` 里加名字）。
 3. **检查用字**：`node tools/check-stories.mjs`，会列出每个故事里不在已学字表里的字、每关多长、90 个字有没有都用到。
-4. **录音**：`tools/gen-audio.py` 用开源的 Kokoro 中文语音模型（Kokoro-82M-v1.1-zh，Apache-2.0）把新的句子录成 mp3，只录新加的或改过的，准备步骤写在文件开头。整句、标题、词和表扬的话用声音 `zf_084`，一口气录下来（不是把单字拼起来），所以读起来是连贯的；每个字从第几秒开始也记下来，用来让字跟着亮。点一个字时念的单字用声音 `zf_003`：它单念一个字时更清楚、也慢一点。还没录音的句子会先用设备自带的语音读。多音字读错的地方加在 `js/chars.js` 的 `SAY_FIX` / `SAY_ALONE` 里。
+4. **录音**：用微软 Azure 语音的神经网络声音「晓晓」（`zh-CN-XiaoxiaoNeural`）把新的句子录成 mp3，只录新加的或改过的：
+   ```bash
+   AZURE_SPEECH_KEY=你的密钥 AZURE_SPEECH_REGION=eastus python3 tools/gen-audio-azure.py
+   ```
+   **密钥只放在环境变量里**，不要写进任何文件、不要提交到 git（这个仓库和网站都是公开的，网页里也不放密钥：网页只放录好的 mp3）。全部重录一遍大约 3 万个字符，Azure 免费档每月有 50 万字。整句一口气录下来，读起来是连贯的；单个字指定拼音（`js/strokes.js` 里的 `CHAR_PY`），多音字、轻声不会念错；每个字从第几秒开始是从声音的停顿里算出来的，用来让字跟着亮。多音字在句子里读错的地方加在 `js/chars.js` 的 `SAY_FIX`（换成同音字）或者 `tools/gen-audio-azure.py` 的 `WORD_PY`（指定拼音）里。还没录音的句子会先用设备自带的语音读。
+   `tools/voices.json` 的 `keep_original` 里写的话（现在是「小虫」「月儿」两个词）保留原来的声音：那是 `tools/gen-audio.py` 用开源的 Kokoro 中文语音模型（Kokoro-82M-v1.1-zh，Apache-2.0）录的，准备步骤写在文件开头；`engine` 是 `azure` 时它只录这几句，加 `--all` 可以全部换回 Kokoro 的声音。
 5. **更新字体**：故事里出现了字体里没有的新字时，运行
    ```bash
    pip install fonttools brotli

@@ -2832,7 +2832,7 @@
           Voice.say(PHRASES.hello);
         }), settings.engine === 1
           ? '所有的话都用这台手机（平板）自带的中文声音读。iPhone / iPad：在「设置 → 辅助功能 → 朗读内容 → 声音 → 中文」里下载「高音质」的声音（比如「月」），这里就能选到。自带的声音偶尔会把多音字念错。'
-          : '录好的声音是电脑合成以后一句一句检查过的。也可以改成手机自带的声音（比如 iPhone 里下载好的「月（高音质）」）。'),
+          : '录好的声音是微软 Azure 语音的「晓晓」，录好以后用语音识别一句一句核对过。也可以改成手机自带的声音（比如 iPhone 里下载好的「月（高音质）」）。'),
         settings.engine === 1
           ? (voices.length
             ? row('手机的声音', h('div', { class: 'voice-pick' }, pick()), '排在前面的是高音质、增强的声音。选好会读一句给你听。')
@@ -2907,7 +2907,7 @@
               h('button', { class: 'btn tiny danger', type: 'button', onclick: () => { progress.done = {}; progress.hearts = 0; progress.likes = 0; progress.unlockAll = false; save(); closeModal(); renderMap(); toast('已经重新开始'); } }, '清空'),
               h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { confirming = false; draw(); } }, '不清空'))
           : h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { confirming = true; draw(); } }, '清空进度')),
-        h('p', { class: 'credit' }, '故事字体：霞鹜文楷 GB（SIL OFL 1.1）。笔顺：Hanzi Writer（MIT）、hanzi-writer-data（Arphic）；笔画名称：cnchar（MIT）。',
+        h('p', { class: 'credit' }, '故事字体：霞鹜文楷 GB（SIL OFL 1.1）。笔顺：Hanzi Writer（MIT）、hanzi-writer-data（Arphic）；笔画名称：cnchar（MIT）。配音：微软 Azure 语音「晓晓」。',
           Cloud.on ? '进度存在你的 claude.ai 账号里，换设备也在。' : '进度只存在这台设备的浏览器里。'),
       ].filter(Boolean));
     }
