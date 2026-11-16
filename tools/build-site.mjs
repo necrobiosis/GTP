@@ -22,8 +22,10 @@ writeFileSync(join(out, 'index.html'), html);
 
 // 录音的文件名由要念的话算出来，内容不会变，可以一直缓存；其他文件每次都检查有没有更新
 writeFileSync(join(out, '_headers'), '/audio/*\n  Cache-Control: public, max-age=31536000, immutable\n');
-// Netlify：这个文件夹原样发布，不用构建
-writeFileSync(join(out, 'netlify.toml'), '[build]\n  publish = "."\n  command = ""\n');
+// Netlify：网页原样发布，不用构建；多设备同步用一个小函数（netlify/functions/sync.mjs，进度存在 Netlify Blobs 里）
+cpSync(join(root, 'netlify'), join(out, 'netlify'), { recursive: true });
+writeFileSync(join(out, 'package.json'), JSON.stringify({ name: 'shizi-gushiwu-site', private: true, type: 'module', dependencies: { '@netlify/blobs': '^8.1.0' } }, null, 2) + '\n');
+writeFileSync(join(out, 'netlify.toml'), '[build]\n  publish = "."\n  command = ""\n\n[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n');
 
 let files = 0;
 let bytes = 0;

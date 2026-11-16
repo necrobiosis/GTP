@@ -66,6 +66,8 @@ Object.values(STATION_TESTS).forEach((t) => { add(t.title, t.title, 'title'); t.
 [...(GARDEN.talks || []), ...(GARDEN.foodTalks || [])].flat().forEach((w) => add(w, null, 'phrase'));
 [...(GARDEN.party || []), ...Object.values(GARDEN.sounds || {}), GARDEN.shopHello, GARDEN.shopBuy, GARDEN.shopPoor].forEach((w) => add(w, null, 'phrase'));
 (GARDEN.shop || []).forEach(([, name]) => add(name, name, 'word'));
+[...(GARDEN.snacks || []), ...(GARDEN.scenes || []).map(([, n]) => [0, n])].forEach(([, name]) => add(name, name, 'word'));
+[...(GARDEN.yum || []), ...(GARDEN.come || []), GARDEN.sceneBuy, GARDEN.snackBuy, GARDEN.snackNone].forEach((w) => add(w, null, 'phrase'));
 Object.values(PIC_WORDS).forEach((w) => add(w, w, 'word'));
 // js/phrases.js 里所有固定的话（表扬、求助的提示……）
 Object.values(PHRASES).flat().forEach((w) => add(w, null, 'phrase'));

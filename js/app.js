@@ -96,6 +96,7 @@
       localStorage.setItem(KEY, JSON.stringify(snapshot()));
     } catch (e) { /* 无痕模式等情况下存不了，没关系 */ }
     Cloud.push();
+    if (!Cloud.on) Family.push();
   }
 
   /* 在 claude.ai 上打开时，进度还存到自己的账号里（换了设备、App 清了缓存也不会丢）。别的网站上只存在浏览器里。 */
@@ -140,6 +141,113 @@
             write();
           }
         } catch (e) { ref = null; }
+      },
+    };
+  })();
+  /* 多设备同步（公开网站上用）：家长生成一个「同步码」，另一台设备输入同一个码，两边的进度就合在一起。
+     进度存在 Netlify 的小服务里（netlify/functions/sync.mjs）；知道同步码的人都能读写，所以要像密码一样保管。 */
+  const SYNC_URL = window.SYNC_URL || 'https://shizi-gushiwu.netlify.app/api/sync';
+  const SYNC_KEY = 'shizi-gushiwu-sync';
+  // 两边的进度合起来：读完的故事、学会的字、生字库……取并集（同一项用新的）；爱心、金币、花园用最后改的那一边
+  function mergeState(a, b) {
+    const [newer, older] = (a.at || 0) >= (b.at || 0) ? [a, b] : [b, a];
+    const out = JSON.parse(JSON.stringify(newer));
+    const stamp = (v) => (v && typeof v === 'object' ? Math.max(v.m || 0, v.at || 0) : typeof v === 'number' ? v : 0);
+    ['done', 'learned', 'taught', 'bank', 'stationPass', 'intro', 'myData'].forEach((k) => {
+      const x = older[k] || {};
+      out[k] = out[k] || {};
+      Object.keys(x).forEach((id) => {
+        if (!(id in out[k])) out[k][id] = x[id];
+        else if (k === 'done' && x[id] && out[k][id]) out[k][id] = Object.assign({}, stamp(x[id]) > stamp(out[k][id]) ? x[id] : out[k][id], { n: Math.max(x[id].n || 1, out[k][id].n || 1) });
+        else if (stamp(x[id]) > stamp(out[k][id])) out[k][id] = x[id];
+      });
+    });
+    out.myChars = [...new Set([...(out.myChars || []), ...(older.myChars || [])])];
+    const ids = new Set((out.myStories || []).map((s) => s.id));
+    out.myStories = [...(out.myStories || []), ...(older.myStories || []).filter((s) => !ids.has(s.id))];
+    if (!out.myName && older.myName) out.myName = older.myName;
+    return out;
+  }
+  const Family = (() => {
+    let code = '';
+    try { code = (JSON.parse(localStorage.getItem(SYNC_KEY) || '{}').code || ''); } catch (e) { /* 忽略 */ }
+    let timer = 0;
+    let busy = false;
+    let lastAt = 0;      // 上一次和服务器对上的时间
+    let lastErr = '';
+    let onChange = null;
+    const call = async (method, c, body) => {
+      const r = await fetch(`${SYNC_URL}?code=${encodeURIComponent(c)}`, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    };
+    const canApply = () => view === 'map' && !introEl && !currentModal;
+    // 先拿服务器上的，和这台设备的合起来；有变化就两边都更新
+    const sync = async (force) => {
+      if (!code || busy) return false;
+      busy = true;
+      try {
+        const remote = await call('GET', code);
+        const local = snapshot();
+        const mine = JSON.stringify(Object.assign({}, local, { settings: null }));
+        let merged = local;
+        if (remote && remote.state) {
+          const theirs = JSON.parse(remote.state);
+          merged = mergeState(local, Object.assign(theirs, { at: remote.at || theirs.at || 0 }));
+          const next = JSON.stringify(Object.assign({}, merged, { settings: null, at: local.at }));
+          if (next !== mine) {
+            if (!force && !canApply()) { busy = false; return false; } // 正在上课、读故事：等回到小路再合
+            const keep = JSON.parse(JSON.stringify(settings)); // 声音、语速这些设置每台设备自己管
+            loadState(Object.assign(merged, { settings: keep }));
+            savedAt = Math.max(local.at || 0, remote.at || 0);
+            try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) { /* 忽略 */ }
+            if (onChange) onChange();
+          }
+        }
+        const now = snapshot();
+        if (!remote || JSON.stringify(Object.assign({}, now, { settings: null })) !== JSON.stringify(Object.assign({}, remote.state ? JSON.parse(remote.state) : {}, { settings: null }))) {
+          await call('PUT', code, { at: now.at || Date.now(), state: JSON.stringify(Object.assign({}, now, { settings: undefined })) });
+        }
+        lastAt = Date.now();
+        lastErr = '';
+      } catch (e) { lastErr = (e && e.message) || 'error'; }
+      busy = false;
+      return !lastErr;
+    };
+    const setCode = (c) => { code = c; try { if (c) localStorage.setItem(SYNC_KEY, JSON.stringify({ code: c })); else localStorage.removeItem(SYNC_KEY); } catch (e) { /* 忽略 */ } };
+    return {
+      get code() { return code; },
+      get lastAt() { return lastAt; },
+      get error() { return lastErr; },
+      show: (c) => (c ? `${c.slice(0, 4)}-${c.slice(4)}` : ''),
+      push() { if (!code) return; clearTimeout(timer); timer = setTimeout(() => sync(false), 2000); },
+      sync,
+      // 这台设备开始同步：生成一个新的同步码，把现在的进度传上去
+      async create() {
+        const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const rnd = new Uint32Array(8);
+        (window.crypto || window.msCrypto).getRandomValues(rnd);
+        setCode([...rnd].map((n) => abc[n % abc.length]).join(''));
+        if (!savedAt) savedAt = Date.now();
+        const ok = await sync(true);
+        if (!ok) setCode('');
+        return ok;
+      },
+      // 另一台设备：输入同步码加入
+      async join(input) {
+        const c = String(input || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!/^[a-z0-9]{8,24}$/.test(c)) return 'bad';
+        try { if (!(await call('GET', c))) return 'none'; } catch (e) { return 'net'; }
+        setCode(c);
+        return (await sync(true)) ? 'ok' : 'net';
+      },
+      leave() { setCode(''); },
+      start(cb) {
+        onChange = cb;
+        sync(false); // 没有同步码时什么也不做；后来生成、加入了同步码，下面两个也会开始管用
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(false); });
+        setInterval(() => { if (!document.hidden && canApply()) sync(false); }, 20000);
       },
     };
   })();
@@ -2351,133 +2459,292 @@
   const GARDEN = window.GARDEN || { talks: [], foodTalks: [], party: [], sounds: {}, shop: [], food: '', sky: '' };
   let gardenTimers = [];
   const gardenAfter = (ms, fn) => { const t = setTimeout(fn, ms); gardenTimers.push(t); return t; };
-  function stopGarden() { gardenTimers.forEach((t) => { clearTimeout(t); clearInterval(t); }); gardenTimers = []; }
+  let gardenRaf = 0;
+  function stopGarden() { gardenTimers.forEach((t) => { clearTimeout(t); clearInterval(t); }); gardenTimers = []; cancelAnimationFrame(gardenRaf); }
   function gotStickers() {
     const seen = new Set();
     return STORIES.filter((s, i) => isDone(i) && !seen.has(s.prize[0]) && seen.add(s.prize[0])).map((s) => s.prize);
   }
-  const shopName = (e) => (GARDEN.shop.find((x) => x[0] === e) || [e, ''])[1];
+  const shopName = (e) => (GARDEN.shop.find((x) => x[0] === e) || (GARDEN.snacks || []).find((x) => x[0] === e) || [e, ''])[1];
 
   function openGarden() {
     overlay('garden');
+    const G = progress.garden;
+    const items = G.items || (G.items = []);
+    const ownedScenes = () => ['meadow', ...(G.scenes || [])];
+    let sceneId = ownedScenes().includes(G.scene) ? G.scene : 'meadow';
     const coinsN = h('b', null, progress.coins);
     let moving = false;
-    const moveBtn = h('button', { class: 'btn tiny soft', type: 'button' }, '✋ 摆一摆');
-    const scene = h('div', { class: 'gd-scene' },
-      h('div', { class: 'gd-sky' }, h('span', { class: 'gd-sun' }, '🌞'), h('span', { class: 'gd-cloud c1' }, '☁️'), h('span', { class: 'gd-cloud c2' }, '☁️')),
-      h('div', { class: 'gd-grass' }));
-    const items = progress.garden.items || (progress.garden.items = []);
-    // 装饰：可以拖着摆
-    const drawDecos = () => {
-      scene.querySelectorAll('.gd-deco').forEach((d) => d.remove());
-      items.forEach((it, k) => {
-        const d = h('button', { class: 'gd-deco', type: 'button', 'aria-label': shopName(it[0]), style: `left:${it[1]}%;top:${it[2]}%;z-index:${Math.round(it[2])}` }, it[0]);
-        d.addEventListener('pointerdown', (e) => {
+    const back = h('div', { class: 'gd-back', 'aria-hidden': 'true' });
+    const layer = h('div', { class: 'gd-layer' });
+    const scene = h('div', { class: 'gd-scene' }, back, layer);
+    const GROUND = [52, 93];
+    const SKY = [8, 30];
+    const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    // 近大远小：越靠下（近）越大
+    const persp = (y) => 0.7 + 0.5 * clamp((y - GROUND[0]) / (GROUND[1] - GROUND[0]), 0, 1);
+    let W = 1;
+    let H = 1;
+    let unit = 48;
+    const measure = () => {
+      const r = scene.getBoundingClientRect();
+      W = r.width || 1;
+      H = r.height || 1;
+      unit = clamp(Math.min(W, H) * 0.1, 34, 66);
+    };
+
+    /* ---------- 背景：四个场景 ---------- */
+    const dots = (n, cls, x0, x1, y0, y1, text) => Array.from({ length: n }, (_, k) => h('i', {
+      class: cls, style: `left:${(x0 + ((k * 61.8) % 100) / 100 * (x1 - x0)).toFixed(1)}%;top:${(y0 + ((k * 38.2 + 17) % 100) / 100 * (y1 - y0)).toFixed(1)}%;animation-delay:${(-(k * 0.73) % 6).toFixed(2)}s;--k:${k % 5}`,
+    }, text ? text[k % text.length] : null));
+    const drawBack = () => {
+      scene.className = `gd-scene sc-${sceneId}${moving ? ' moving' : ''}`;
+      back.innerHTML = '';
+      const sky = h('div', { class: 'gd-sky' });
+      const ground = h('div', { class: 'gd-ground' });
+      back.append(sky, h('div', { class: 'gd-hill h1' }), h('div', { class: 'gd-hill h2' }), ground);
+      if (sceneId === 'meadow') {
+        sky.append(h('i', { class: 'gd-orb' }), h('i', { class: 'gd-cl a' }), h('i', { class: 'gd-cl b' }), h('i', { class: 'gd-cl c' }));
+        ground.append(h('i', { class: 'gd-path' }), h('i', { class: 'gd-pond' }), ...dots(12, 'gd-tuft', 3, 97, 8, 92, ['🌱', '🌿', '🌱', '🍀']), ...dots(7, 'gd-bloom', 5, 95, 12, 90, ['🌼', '🌸', '🌼']));
+      } else if (sceneId === 'beach') {
+        sky.append(h('i', { class: 'gd-orb' }), h('i', { class: 'gd-cl a' }), h('i', { class: 'gd-cl c' }), ...dots(3, 'gd-gull', 10, 90, 20, 60, ['🕊️']));
+        back.append(h('div', { class: 'gd-sea' }, h('i', { class: 'gd-wave w1' }), h('i', { class: 'gd-wave w2' }), h('i', { class: 'gd-boat' }, '⛵')));
+        ground.append(...dots(6, 'gd-tuft', 4, 96, 20, 92, ['🐚', '🦀', '⭐', '🐚']), h('i', { class: 'gd-para' }, '⛱️'));
+      } else if (sceneId === 'snow') {
+        sky.append(h('i', { class: 'gd-cl a' }), h('i', { class: 'gd-cl b' }), h('i', { class: 'gd-cl c' }));
+        back.append(h('div', { class: 'gd-fall' }, dots(26, 'gd-flake', 0, 100, 0, 100)));
+        ground.append(...dots(6, 'gd-pine', 4, 96, -14, 4, ['🌲']), h('i', { class: 'gd-pond ice' }), ...dots(5, 'gd-tuft', 6, 94, 30, 92, ['❄️', '⛸️', '❄️']));
+      } else {
+        sky.append(h('i', { class: 'gd-moon' }), ...dots(34, 'gd-star', 0, 100, 0, 96), h('i', { class: 'gd-shoot' }));
+        ground.append(...dots(9, 'gd-fly', 4, 96, 0, 80, ['✨']), ...dots(8, 'gd-tuft', 3, 97, 10, 92, ['🌿', '🍄', '🌱']), h('i', { class: 'gd-fire' }, '🏕️'));
+      }
+    };
+
+    /* ---------- 买来的装饰：种在地上，可以拖着摆 ---------- */
+    let decos = [];
+    const placeDeco = (d) => {
+      const it = d.it;
+      d.el.style.left = it[1] + '%';
+      d.el.style.top = it[2] + '%';
+      d.el.style.zIndex = Math.round(it[2] * 10);
+      d.el.style.fontSize = Math.round(unit * (GARDEN.decoSize[it[0]] || 1) * persp(it[2])) + 'px';
+    };
+    const drawDecos = (fresh) => {
+      layer.querySelectorAll('.gd-deco').forEach((d) => d.remove());
+      decos = items.filter((it) => (it[3] || 'meadow') === sceneId).map((it) => {
+        const kind = (GARDEN.shop.find((x) => x[0] === it[0]) || [])[3] || 'toy';
+        const el = h('button', { class: `gd-deco k-${kind}${it === fresh ? ' fresh' : ''}`, type: 'button', 'aria-label': shopName(it[0]) }, h('span', { class: 'gd-dbody' }, it[0]));
+        const d = { it, el };
+        placeDeco(d);
+        el.addEventListener('pointerdown', (e) => {
           if (!moving) return;
           e.preventDefault();
-          d.setPointerCapture(e.pointerId);
+          el.setPointerCapture(e.pointerId);
           const r = scene.getBoundingClientRect();
           const mv = (ev) => {
-            it[1] = Math.max(3, Math.min(97, ((ev.clientX - r.left) / r.width) * 100));
-            it[2] = Math.max(30, Math.min(96, ((ev.clientY - r.top) / r.height) * 100));
-            d.style.left = it[1] + '%';
-            d.style.top = it[2] + '%';
-            d.style.zIndex = Math.round(it[2]);
+            it[1] = clamp(((ev.clientX - r.left) / r.width) * 100, 3, 97);
+            it[2] = clamp(((ev.clientY - r.top) / r.height) * 100 + 4, GROUND[0] - 4, 97);
+            placeDeco(d);
           };
-          const up = () => { d.removeEventListener('pointermove', mv); d.removeEventListener('pointerup', up); save(); };
-          d.addEventListener('pointermove', mv);
-          d.addEventListener('pointerup', up);
+          const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); save(); };
+          el.addEventListener('pointermove', mv);
+          el.addEventListener('pointerup', up);
+          el.addEventListener('pointercancel', up);
         });
-        d.addEventListener('click', () => { if (moving) return; pop(d); Voice.say(shopName(it[0])); });
-        scene.append(d);
-        void k;
+        el.addEventListener('click', (ev) => { ev.stopPropagation(); if (moving) return; bounce(el); Sfx.pop(); Voice.say(shopName(it[0])); });
+        layer.append(el);
+        return d;
       });
     };
-    moveBtn.addEventListener('click', () => {
-      moving = !moving;
-      scene.classList.toggle('moving', moving);
-      moveBtn.textContent = moving ? '✓ 摆好了' : '✋ 摆一摆';
-      if (moving) toast('拖一拖装饰，放到喜欢的地方');
-    });
-    // 贴纸
+    const bounce = (el) => { el.classList.remove('boing'); void el.offsetWidth; el.classList.add('boing'); };
+
+    /* ---------- 贴纸：自己走来走去（每一帧算位置，走得顺） ---------- */
     const got = gotStickers();
     const pets = got.map(([e, name], k) => {
       const sky = GARDEN.sky.includes(e);
-      const food = GARDEN.food.includes(e);
-      const el = h('button', { class: 'gd-pet' + (sky ? ' sky' : ''), type: 'button', 'aria-label': name }, h('span', { class: 'gd-body' }, e));
-      const p = { e, name, sky, food, el, x: 8 + Math.random() * 84, y: sky ? 10 + Math.random() * 26 : 48 + Math.random() * 44 };
-      el.style.left = p.x + '%';
-      el.style.top = p.y + '%';
-      el.style.zIndex = 100 + Math.round(p.y);
-      el.addEventListener('click', (ev) => {
+      const body = h('span', { class: 'gd-body' }, e);
+      const foot = h('button', { class: 'gd-foot', type: 'button', 'aria-label': name }, h('span', { class: 'gd-anim' }, body));
+      const el = h('div', { class: 'gd-pet' + (sky ? ' sky' : '') }, h('i', { class: 'gd-shadow' }), foot);
+      const p = {
+        e, name, sky, food: GARDEN.food.includes(e), el, foot, body, size: GARDEN.size[e] || 0.9,
+        x: rand(8, 92), y: sky ? rand(SKY[0], SKY[1]) : rand(GROUND[0] + 2, GROUND[1]),
+        tx: null, ty: null, face: Math.random() < 0.5 ? -1 : 1, walk: Math.random() * 6, phase: Math.random() * 6, wait: rand(0.3, 4) + k * 0.05, busy: false,
+      };
+      // 点一下：说名字；按住拖：把它提起来放到别的地方
+      foot.addEventListener('pointerdown', (ev) => {
+        if (moving) return;
+        const sx = ev.clientX;
+        const sy = ev.clientY;
+        let held = false;
+        const r = scene.getBoundingClientRect();
+        const mv = (m) => {
+          if (!held && Math.hypot(m.clientX - sx, m.clientY - sy) < 10) return;
+          if (!held) { held = true; p.drag = true; p.tx = null; p.onArrive = null; el.classList.add('held'); try { foot.setPointerCapture(ev.pointerId); } catch (err) { /* 忽略 */ } }
+          p.x = clamp(((m.clientX - r.left) / r.width) * 100, 3, 97);
+          p.y = clamp(((m.clientY - r.top) / r.height) * 100 + 5, 6, 97);
+        };
+        const up = () => {
+          foot.removeEventListener('pointermove', mv);
+          foot.removeEventListener('pointerup', up);
+          foot.removeEventListener('pointercancel', up);
+          if (!held) return;
+          p.dragged = true;
+          setTimeout(() => { p.dragged = false; }, 60);
+          p.drag = false;
+          el.classList.remove('held');
+          // 放手：地上的落回地上，天上的飘回天上
+          const range = p.sky ? SKY : GROUND;
+          if (p.y < range[0] || p.y > range[1]) go(p, p.x, clamp(p.y, range[0] + 2, range[1] - 1), { run: true });
+          hop(p);
+          emote(p, '💫');
+          Sfx.pop();
+          p.wait = rand(1.5, 3);
+        };
+        foot.addEventListener('pointermove', mv);
+        foot.addEventListener('pointerup', up);
+        foot.addEventListener('pointercancel', up);
+      });
+      foot.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        hopPet(p);
+        if (p.dragged || moving) return;
+        hop(p);
         bubble(p, name);
+        emote(p, '❤️');
         const snd = GARDEN.sounds[e];
         Voice.seq(snd ? [name, snd] : [name]);
         Sfx.pop();
       });
-      scene.append(el);
-      void k;
+      layer.append(el);
       return p;
     });
-    const moveTo = (p, x, y, ms) => {
-      if (x < p.x) p.el.classList.add('flip'); else p.el.classList.remove('flip');
-      p.x = x; p.y = y;
-      p.el.style.transitionDuration = (ms || 2500) + 'ms';
-      p.el.style.left = x + '%';
-      p.el.style.top = y + '%';
-      p.el.style.zIndex = 100 + Math.round(y);
-    };
-    const hopPet = (p, cls) => { p.el.classList.remove(cls || 'hop'); void p.el.offsetWidth; p.el.classList.add(cls || 'hop'); };
+    const go = (p, x, y, o) => { o = o || {}; p.tx = clamp(x, 4, 96); p.ty = y; p.run = !!o.run; p.onArrive = o.then || null; };
+    const hop = (p, cls) => { const a = p.foot.firstChild; a.classList.remove('hop', 'spin', 'dance'); void a.offsetWidth; a.classList.add(cls || 'hop'); };
+    const emote = (p, e) => { const m = h('span', { class: 'gd-emote', 'aria-hidden': 'true' }, e); p.foot.append(m); gardenAfter(1500, () => m.remove()); };
     const bubble = (p, text, voice) => {
-      const old = p.el.querySelector('.gd-say');
+      const old = p.foot.querySelector('.gd-say');
       if (old) old.remove();
       const b = h('span', { class: 'gd-say', role: 'button', tabindex: '0', onclick: (ev) => { ev.stopPropagation(); Voice.say(text); } }, text);
-      p.el.append(b);
+      p.foot.append(b);
       if (voice) Voice.say(text);
       gardenAfter(3200, () => b.remove());
     };
-    const rnd = (a) => a[Math.floor(Math.random() * a.length)];
-    // 自己走走、跳跳、转转、打个盹
-    const wander = () => {
-      if (!introEl || !pets.length) return;
-      const n = Math.max(1, Math.round(pets.length / 3));
-      for (let k = 0; k < n; k++) {
-        const p = rnd(pets);
-        if (p.busy) continue;
-        const r = Math.random();
-        if (r < 0.55) moveTo(p, Math.max(5, Math.min(95, p.x + (Math.random() - 0.5) * 40)), p.sky ? 8 + Math.random() * 28 : 48 + Math.random() * 44, 2000 + Math.random() * 2000);
-        else if (r < 0.75) hopPet(p);
-        else if (r < 0.88) hopPet(p, 'spin');
-        else { const z = h('span', { class: 'gd-zz' }, '💤'); p.el.append(z); gardenAfter(2600, () => z.remove()); }
-      }
-      gardenAfter(1600, wander);
+    // 空下来做什么：走走、去装饰旁边玩、跳一跳、转个圈、打个盹
+    const choose = (p) => {
+      const r = Math.random();
+      const toys = decos.filter((d) => GARDEN.play[d.it[0]]);
+      if (!p.sky && toys.length && r < 0.3) {
+        const d = rnd(toys);
+        go(p, d.it[1] + (Math.random() < 0.5 ? -5 : 5), clamp(d.it[2] + 2, GROUND[0], GROUND[1]), { run: Math.random() < 0.4, then: () => { emote(p, GARDEN.play[d.it[0]]); hop(p, GARDEN.play[d.it[0]] === '🤸' || GARDEN.play[d.it[0]] === '🎶' ? 'spin' : 'hop'); bounce(d.el); p.wait = rand(2.5, 5); } });
+      } else if (r < 0.78) {
+        const range = p.sky ? SKY : GROUND;
+        go(p, p.x + rand(-28, 28), rand(range[0] + 1, range[1]), { then: () => { p.wait = rand(1.2, 5); } });
+      } else if (r < 0.87) { hop(p); p.wait = rand(1.5, 3); } else if (r < 0.94) { hop(p, 'spin'); p.wait = rand(1.5, 3); } else { emote(p, '💤'); p.wait = rand(3, 5); }
     };
-    // 两个贴纸碰到一起，说说话；一个是吃的东西时，另一个会追着它跑
+    let last = 0;
+    const frame = (t) => {
+      if (!introEl || !scene.isConnected) return;
+      const dt = Math.min(0.05, last ? (t - last) / 1000 : 0.016);
+      last = t;
+      const now = t / 1000;
+      pets.forEach((p) => {
+        let lift = 0;
+        let tilt = 0;
+        let sx = 1;
+        let sy = 1;
+        if (p.drag) {
+          tilt = Math.sin(now * 14) * 9;
+          lift = unit * 0.25;
+        } else if (p.tx != null) {
+          const dx = ((p.tx - p.x) * W) / 100;
+          const dy = ((p.ty - p.y) * H) / 100;
+          const dist = Math.hypot(dx, dy);
+          const top = unit * (p.run ? 4.6 : 1.7) * (p.sky ? 0.8 : 1);
+          const v = Math.min(top, dist * 3.5 + unit * 0.35); // 快到的时候慢下来
+          if (dist < 1.5) {
+            p.tx = null;
+            const f = p.onArrive;
+            p.onArrive = null;
+            if (f) f(); else p.wait = rand(1, 4);
+          } else {
+            const step = Math.min(dist, v * dt);
+            p.x += ((dx / dist) * step * 100) / W;
+            p.y += ((dy / dist) * step * 100) / H;
+            if (Math.abs(dx) > 3) p.face = dx < 0 ? -1 : 1;
+            p.walk += dt * (p.run ? 17 : 10) * Math.min(1, v / (unit * 1.2));
+            if (p.sky) { lift = Math.sin(p.walk * 0.5) * unit * 0.1; tilt = p.face * 4; } else { lift = Math.abs(Math.sin(p.walk)) * unit * (p.run ? 0.2 : 0.12); tilt = Math.sin(p.walk) * (p.run ? 8 : 5); }
+          }
+        } else {
+          // 站着：轻轻呼吸；天上的慢慢飘
+          const b = Math.sin(now * 2.2 + p.phase);
+          if (p.sky) lift = b * unit * 0.1; else { sx = 1 + b * 0.025; sy = 1 - b * 0.03; }
+          if (!p.busy) { p.wait -= dt; if (p.wait <= 0) { p.wait = 9; choose(p); } }
+        }
+        const size = unit * p.size * (p.sky ? 1 : persp(p.y));
+        p.el.style.transform = `translate3d(${((p.x * W) / 100).toFixed(1)}px, ${((p.y * H) / 100).toFixed(1)}px, 0)`;
+        p.el.style.zIndex = p.drag ? 9999 : p.sky ? 4000 + Math.round(p.y) : Math.round(p.y * 10);
+        p.el.style.fontSize = size.toFixed(1) + 'px';
+        p.body.style.transform = `translateY(${(-lift).toFixed(1)}px) rotate(${tilt.toFixed(1)}deg) scale(${(p.face * sx).toFixed(3)}, ${sy.toFixed(3)})`;
+      });
+      gardenRaf = requestAnimationFrame(frame);
+    };
+
+    /* ---------- 一起玩 ---------- */
+    const free = (sky) => pets.filter((p) => !p.busy && !p.drag && p.sky === sky);
+    const nearest = (list, x, y, n) => list.slice().sort((a, b) => Math.hypot(a.x - x, (a.y - y) * 0.6) - Math.hypot(b.x - x, (b.y - y) * 0.6)).slice(0, n);
+    let lastCome = 0;
+    // 点一下空地：近的几个贴纸跑过来
+    scene.addEventListener('click', (ev) => {
+      if (moving || ev.target.closest('.gd-foot, .gd-deco, .gd-snack, .gd-chips')) return;
+      const r = scene.getBoundingClientRect();
+      const x = ((ev.clientX - r.left) / r.width) * 100;
+      const y = ((ev.clientY - r.top) / r.height) * 100;
+      const sky = y < GROUND[0] - 6;
+      const ring = h('i', { class: 'gd-ring', style: `left:${x}%;top:${y}%` });
+      layer.append(ring);
+      gardenAfter(700, () => ring.remove());
+      Sfx.tap();
+      const range = sky ? SKY : GROUND;
+      nearest(free(sky), x, y, 3).forEach((p, k) => {
+        go(p, x + (k - 1) * 7, clamp(y + (k === 1 ? 0 : 3), range[0], range[1]), { run: true, then: () => {
+          hop(p);
+          p.wait = rand(1.5, 3.5);
+          if (k === 0 && Date.now() - lastCome > 5000) { lastCome = Date.now(); bubble(p, rnd(GARDEN.come), true); }
+        } });
+      });
+    });
+    // 两个贴纸凑到一起说说话；一个是吃的东西时，另一个会追着它跑
     const talk = () => {
       if (!introEl) return;
-      if (pets.length >= 2) {
-        const a = rnd(pets);
-        let b = rnd(pets.filter((x) => x !== a));
+      const pool = pets.filter((p) => !p.busy && !p.drag);
+      if (pool.length >= 2 && !scene.querySelector('.gd-snack')) {
+        const a = rnd(pool);
+        const b = rnd(pool.filter((x) => x !== a));
         const foodPair = (a.food && !b.food) || (b.food && !a.food);
         const lines = foodPair && GARDEN.foodTalks.length ? rnd(GARDEN.foodTalks) : rnd(GARDEN.talks);
         let first = a;
         let second = b;
-        if (foodPair) { first = a.food ? b : a; second = a.food ? a : b; } // 想吃的先说，吃的东西回答
+        if (foodPair) { first = a.food ? b : a; second = a.food ? a : b; }
         a.busy = b.busy = true;
-        const tx = Math.max(6, Math.min(94, second.x + (second.x > 50 ? -9 : 9)));
-        moveTo(first, tx, first.sky === second.sky ? second.y : first.y, 1600);
-        gardenAfter(1700, () => { bubble(first, lines[0], true); hopPet(first); });
-        gardenAfter(4300, () => {
-          bubble(second, lines[1], true);
-          hopPet(second);
-          if (foodPair) { // 吃的东西跑掉，另一个追
-            moveTo(second, second.x > 50 ? 6 : 94, second.y, 1800);
-            gardenAfter(400, () => moveTo(first, second.x, first.y, 2000));
-          }
-        });
-        gardenAfter(6500, () => { a.busy = b.busy = false; });
+        second.tx = null;
+        const side = second.x > 50 ? -1 : 1;
+        go(first, second.x + side * 9, first.sky === second.sky ? second.y : first.y, { run: true, then: () => {
+          first.face = -side;
+          second.face = side;
+          bubble(first, lines[0], true);
+          hop(first);
+          gardenAfter(2600, () => {
+            bubble(second, lines[1], true);
+            hop(second);
+            if (foodPair) {
+              go(second, second.x > 50 ? 8 : 92, second.y, { run: true });
+              gardenAfter(350, () => go(first, second.tx != null ? second.tx : second.x, first.y, { run: true }));
+            }
+          });
+          gardenAfter(5200, () => { a.busy = b.busy = false; a.wait = rand(1, 3); b.wait = rand(1, 3); });
+        } });
+        gardenAfter(12000, () => { a.busy = b.busy = false; }); // 万一没走到，也放开
       }
       gardenAfter(Math.max(7000, 15000 - pets.length * 400), talk);
     };
@@ -2488,19 +2755,112 @@
         const conga = pets.length >= 15 && Math.random() < 0.5;
         Voice.say(conga ? GARDEN.party[2] : rnd(GARDEN.party.slice(0, 2)));
         if (conga) {
-          pets.filter((p) => !p.sky).forEach((p, k) => {
+          const line = pets.filter((p) => !p.sky && !p.drag);
+          line.forEach((p, k) => {
             p.busy = true;
-            moveTo(p, 4 + (k % 12) * 2, 78, 1200);
-            gardenAfter(1400 + k * 120, () => moveTo(p, 92 - ((pets.length - k) % 12) * 2, 78, 5000));
-            gardenAfter(7500, () => { p.busy = false; });
+            go(p, 6 + (k % 14) * 3, 80, { run: true });
+            gardenAfter(1800 + k * 140, () => go(p, 94 - ((line.length - 1 - k) % 14) * 3, 80));
+            gardenAfter(9000, () => { p.busy = false; p.wait = rand(0.5, 3); });
           });
         } else {
-          pets.forEach((p, k) => gardenAfter(k * 80, () => hopPet(p, 'dance')));
+          pets.forEach((p, k) => gardenAfter(k * 80, () => hop(p, 'dance')));
           confettiRain();
         }
       }
       gardenAfter(26000 + Math.random() * 10000, party);
     };
+
+    /* ---------- 喂零食 ---------- */
+    const basket = () => G.snacks || (G.snacks = {});
+    const snackCount = () => Object.values(basket()).reduce((a, b) => a + b, 0);
+    const tray = h('div', { class: 'gd-tray', hidden: true });
+    const feedBtn = h('button', { class: 'btn soft gd-feed', type: 'button' });
+    const drawFeed = () => {
+      feedBtn.innerHTML = '';
+      feedBtn.append(...['🧺 喂一喂', snackCount() ? h('b', null, snackCount()) : null].filter(Boolean));
+      tray.innerHTML = '';
+      const have = GARDEN.snacks.filter(([e]) => basket()[e] > 0);
+      tray.append(...(have.length ? have.map(([e, name]) => h('button', { class: 'gd-tray-i', type: 'button', 'aria-label': name, onclick: () => feed(e) }, h('span', null, e), h('b', null, '×' + basket()[e])))
+        : [h('span', { class: 'gd-tray-none' }, '小篮子是空的'), h('button', { class: 'btn tiny', type: 'button', onclick: () => shop('snack') }, '去买零食')]));
+    };
+    feedBtn.addEventListener('click', () => {
+      tray.hidden = !tray.hidden;
+      if (!tray.hidden && !snackCount()) Voice.say(GARDEN.snackNone);
+    });
+    const feed = (e) => {
+      if (!(basket()[e] > 0) || scene.querySelector('.gd-snack')) return;
+      basket()[e] -= 1;
+      save();
+      drawFeed();
+      const x = rand(25, 75);
+      const y = rand(GROUND[0] + 12, GROUND[1] - 6);
+      const s = h('i', { class: 'gd-snack', style: `left:${x}%;top:${y}%;z-index:${Math.round(y * 10) + 5};font-size:${Math.round(unit * 0.8)}px` }, e);
+      layer.append(s);
+      Sfx.pop();
+      let eaten = false;
+      const eaters = nearest(free(false), x, y, 5);
+      eaters.forEach((p, k) => {
+        p.busy = true;
+        go(p, x + (k % 2 ? -1 : 1) * (4 + k * 2.5), y + (k > 2 ? 3 : 0), { run: true, then: () => {
+          p.face = p.x < x ? 1 : -1;
+          hop(p);
+          emote(p, '😋');
+          if (!eaten) {
+            eaten = true;
+            bubble(p, rnd(GARDEN.yum), true);
+            s.classList.add('gone');
+            burstAt(s, { set: ['❤️', '✨', '💕'], n: 8, dist: 70 });
+            gardenAfter(900, () => s.remove());
+          }
+          gardenAfter(2400, () => { p.busy = false; p.wait = rand(0.5, 2.5); });
+        } });
+      });
+      gardenAfter(9000, () => { s.remove(); eaters.forEach((p) => { p.busy = false; }); });
+    };
+
+    /* ---------- 换场景、商店、摆一摆 ---------- */
+    const chips = h('div', { class: 'gd-chips' });
+    const drawChips = () => {
+      chips.innerHTML = '';
+      const own = ownedScenes();
+      chips.append(...GARDEN.scenes.map(([id, name, icon]) => {
+        const has = own.includes(id);
+        return h('button', {
+          class: 'gd-chip' + (id === sceneId ? ' on' : '') + (has ? '' : ' lock'), type: 'button', 'aria-label': has ? name : `${name}（还没打开）`,
+          onclick: (ev) => { ev.stopPropagation(); if (has) setScene(id, true); else shop('scene'); },
+        }, h('span', null, has ? icon : '🔒'), h('small', null, name));
+      }));
+    };
+    const setScene = (id, say) => {
+      if (id === sceneId) return;
+      sceneId = id;
+      G.scene = id;
+      save();
+      scene.classList.add('swap');
+      gardenAfter(450, () => scene.classList.remove('swap'));
+      drawBack();
+      drawDecos();
+      drawChips();
+      pets.forEach((p) => { p.wait = rand(0.2, 2.5); });
+      Sfx.page();
+      if (say) Voice.say((GARDEN.scenes.find((x) => x[0] === id) || [])[1]);
+    };
+    const shop = (tab) => openShop({
+      tab, scene: sceneId,
+      onBuy: (what, v) => {
+        coinsN.textContent = progress.coins;
+        if (what === 'deco') { drawDecos(v); const d = decos.find((x) => x.it === v); if (d) nearest(free(false), v[1], v[2], 3).forEach((p) => go(p, v[1] + rand(-8, 8), clamp(v[2] + 3, GROUND[0], GROUND[1]), { run: true, then: () => { hop(p); emote(p, '😍'); p.wait = rand(2, 4); } })); }
+        if (what === 'snack') drawFeed();
+        if (what === 'scene') { drawChips(); setScene(v); }
+      },
+    });
+    const moveBtn = h('button', { class: 'btn tiny soft', type: 'button' }, '✋ 摆一摆');
+    moveBtn.addEventListener('click', () => {
+      moving = !moving;
+      scene.classList.toggle('moving', moving);
+      moveBtn.textContent = moving ? '✓ 摆好了' : '✋ 摆一摆';
+      if (moving) toast(decos.length ? '拖一拖买来的装饰，放到喜欢的地方' : '这个地方还没有装饰，去商店买一个吧');
+    });
     introEl.append(
       h('header', { class: 'q-head gd-head' },
         h('button', { class: 'rbtn', type: 'button', 'aria-label': '回到小路', html: I.close, onclick: () => { stopIntroUI(); Voice.stop(); renderMap(); } }),
@@ -2508,39 +2868,82 @@
         h('span', { class: 'gd-coins', title: '金币' }, h('i', { 'aria-hidden': 'true' }, '🪙'), coinsN)),
       scene,
       ...(got.length ? [] : [h('p', { class: 'gd-empty' }, '读完故事得到的贴纸，会到花园里来玩。')]),
+      tray,
       h('footer', { class: 'gd-btns' },
-        h('button', { class: 'btn', type: 'button', onclick: () => openShop(() => { coinsN.textContent = progress.coins; drawDecos(); }) }, '🛒 商店'),
-        moveBtn,
+        h('button', { class: 'btn', type: 'button', onclick: () => shop() }, '🛒 商店'),
+        feedBtn, moveBtn,
         h('button', { class: 'btn tiny soft', type: 'button', onclick: () => openStickers() }, '🎁 宝箱')));
+    scene.append(chips);
+    measure();
+    drawBack();
     drawDecos();
-    gardenAfter(600, wander);
-    gardenAfter(2500, talk);
-    gardenAfter(9000, party);
+    drawChips();
+    drawFeed();
+    const onResize = () => { if (!scene.isConnected) { window.removeEventListener('resize', onResize); return; } measure(); decos.forEach(placeDeco); };
+    window.addEventListener('resize', onResize);
+    gardenRaf = requestAnimationFrame(frame);
+    gardenAfter(3000, talk);
+    gardenAfter(11000, party);
   }
 
-  // 商店：用金币买装饰。小东西几个金币，大东西要攒好几天
-  function openShop(onBuy) {
+  // 商店：分成几类（花草、玩具、房子、零食、场景）。小东西几个金币，大东西要攒好几天
+  function openShop(o) {
+    o = o || {};
+    const G = progress.garden;
+    const TABS = [['plant', '🌼', '花草'], ['toy', '🎠', '玩具'], ['house', '🏠', '房子'], ['snack', '🍪', '零食'], ['scene', '🖼️', '场景']];
+    let tab = o.tab || 'plant';
     const box = modal('sheet shop', [h('h2', null, '花园商店'), h('div', { class: 'shop-body' })]);
     const body = box.querySelector('.shop-body');
     const draw = () => {
       body.innerHTML = '';
+      const items = G.items || (G.items = []);
+      const scenes = G.scenes || (G.scenes = []);
+      const snacks = G.snacks || (G.snacks = {});
+      const list = tab === 'snack' ? GARDEN.snacks.map(([e, name, price]) => ({ e, name, price, n: snacks[e] || 0 }))
+        : tab === 'scene' ? GARDEN.scenes.map(([id, name, e, price]) => ({ id, e, name, price, owned: id === 'meadow' || scenes.includes(id) }))
+          : GARDEN.shop.filter((x) => x[3] === tab).map(([e, name, price]) => ({ e, name, price, n: items.filter((it) => it[0] === e).length }));
       body.append(
-        h('p', { class: 'sheet-sub' }, '学会一个字、读完一个故事、过一个小测验，都能得到金币。', h('b', { class: 'shop-have' }, ` 🪙 ${progress.coins}`)),
-        h('div', { class: 'shop-grid' }, GARDEN.shop.map(([e, name, price]) => {
-          const can = progress.coins >= price;
-          const b = h('button', { class: 'shop-item' + (can ? '' : ' poor'), type: 'button', 'aria-label': `${name}，${price} 个金币` },
-            h('span', { class: 'shop-e' }, e), h('span', { class: 'shop-n' }, name), h('span', { class: 'shop-p' }, `🪙 ${price}`));
+        h('div', { class: 'shop-top' },
+          h('span', { class: 'shop-purse' }, h('i', null, '🪙'), h('b', null, progress.coins)),
+          h('small', null, '学会一个字 3 个金币，读完一个故事 5 个，过一个小测验 15 个。')),
+        h('div', { class: 'shop-tabs', role: 'tablist' }, TABS.map(([id, e, name]) => h('button', {
+          class: 'shop-tab' + (id === tab ? ' on' : ''), type: 'button', role: 'tab', 'aria-selected': id === tab ? 'true' : 'false', onclick: () => { tab = id; Sfx.tap(); draw(); },
+        }, h('span', null, e), name))),
+        h('p', { class: 'shop-hint' }, tab === 'snack' ? '零食放进小篮子，在花园里点「喂一喂」，贴纸会跑来吃。' : tab === 'scene' ? '打开新的地方，贴纸可以去那里玩。' : '买来的装饰会种在现在这个地方，贴纸会跑去玩。'),
+        h('div', { class: `shop-grid t-${tab}` }, list.map((it) => {
+          const can = progress.coins >= it.price;
+          const b = h('button', { class: 'shop-item' + (it.owned ? ' owned' : can ? '' : ' poor'), type: 'button', 'aria-label': it.owned ? `${it.name}，已经有了` : `${it.name}，${it.price} 个金币` },
+            it.n ? h('i', { class: 'shop-n-have' }, `有 ${it.n} 个`) : null,
+            h('span', { class: 'shop-e' }, it.e), h('span', { class: 'shop-n' }, it.name),
+            it.owned ? h('span', { class: 'shop-p go' }, '✓ 去看看')
+              : can ? h('span', { class: 'shop-p' }, `🪙 ${it.price}`)
+                : h('span', { class: 'shop-p need' }, h('i', { style: `width:${Math.round((progress.coins / it.price) * 100)}%` }), h('em', null, `🪙 ${it.price} · 还差 ${it.price - progress.coins}`)));
           b.addEventListener('click', () => {
-            if (!can) { Sfx.oops(); Voice.say(GARDEN.shopPoor); return; }
-            progress.coins -= price;
-            const items = progress.garden.items || (progress.garden.items = []);
-            items.push([e, 8 + Math.random() * 84, 52 + Math.random() * 40]);
-            save();
+            if (it.owned) { closeModal(); if (o.onBuy) o.onBuy('scene', it.id); return; }
+            if (!can) { Sfx.oops(); b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); Voice.say(GARDEN.shopPoor); return; }
+            progress.coins -= it.price;
             Sfx.ding();
             burstAt(b, { set: ['✨', '🪙', '⭐'], n: 10 });
-            Voice.say(GARDEN.shopBuy);
-            draw();
-            if (onBuy) onBuy();
+            if (tab === 'snack') {
+              snacks[it.e] = (snacks[it.e] || 0) + 1;
+              save();
+              Voice.say(GARDEN.snackBuy);
+              draw();
+              if (o.onBuy) o.onBuy('snack', it.e);
+            } else if (tab === 'scene') {
+              scenes.push(it.id);
+              save();
+              Voice.say(GARDEN.sceneBuy);
+              closeModal();
+              if (o.onBuy) o.onBuy('scene', it.id);
+            } else {
+              const v = [it.e, 10 + Math.random() * 80, 58 + Math.random() * 34, o.scene || 'meadow'];
+              items.push(v);
+              save();
+              Voice.say(GARDEN.shopBuy);
+              draw();
+              if (o.onBuy) o.onBuy('deco', v);
+            }
           });
           return b;
         })));
@@ -2785,6 +3188,8 @@
       return b;
     };
     let confirming = false;
+    let syncNote = '';   // 同步那一行的提示和输入的码：重画设置时留着
+    let syncTyped = '';
     function draw() {
       body.innerHTML = '';
       const voices = Speech.voices;
@@ -2819,7 +3224,18 @@
         return sel;
       };
       // 空的一行（null）不放进去，不然会显示成文字 "null"
+      // 学习报告：给家长看的，哪些字还不熟、可以陪着多练
+      const weak = Object.entries(progress.bank).sort((x, y) => (y[1].n || 0) - (x[1].n || 0) || (x[1].lv || 0) - (y[1].lv || 0)).slice(0, 10).map(([c]) => c);
+      const knownN = new Set([...Object.keys(progress.taught), ...Object.keys(progress.learned)]).size;
       body.append(...[
+        row('学习报告', h('div', { class: 'rep' },
+          h('div', { class: 'rep-nums' },
+            h('span', null, h('b', null, STORIES.filter((x, k) => isDone(k)).length), '个故事读完了'),
+            h('span', null, h('b', null, knownN), '个字上过课'),
+            h('span', null, h('b', null, bankDue().length), '个字今天要回顾')),
+          weak.length ? h('div', { class: 'rep-weak' }, h('small', null, '最需要多练的字（点一个字可以再上一次课）：'),
+            h('div', { class: 'rep-chars' }, weak.map((c) => h('button', { class: 'ch sm new', type: 'button', 'aria-label': c, onclick: () => { closeModal(true); openIntro([c], { done: () => renderMap() }); } }, c)))) : null),
+        weak.length ? '这些是求助次数最多、回顾时最常认错的字。平时看到这些字（书上、路牌上），可以指给孩子认一认。' : '孩子读故事时求助过的字、说不认识的字会出现在这里。'),
         row('声音', h('div', { class: 'snd' },
           h('button', { class: 'btn tiny', type: 'button', onclick: test }, icon(I.speaker), '听一听'),
           status),
@@ -2895,6 +3311,32 @@
                   onclick: () => PhotoDB.del(p.id).then(loadUserPhotos).then(() => { draw(); if (view === 'map') renderMap(); }) })))),
             h('label', { class: 'btn tiny', for: 'set-photos' }, '添加照片'), input);
         })(), '读完一关会跳出来，还能点赞。照片只存在这台设备上。'),
+        Cloud.on ? null : row('多设备同步', (() => {
+          const msgEl = h('p', { class: 'sync-msg', role: 'status' }, syncNote);
+          const msg = { set textContent(t) { syncNote = t; body.querySelectorAll('.sync-msg').forEach((e) => { e.textContent = t; }); } };
+          if (Family.code) {
+            return h('div', { class: 'sync-box' },
+              h('div', { class: 'sync-code', 'aria-label': '同步码' }, Family.show(Family.code)),
+              h('div', { class: 'sync-btns' },
+                h('button', { class: 'btn tiny', type: 'button', onclick: async () => { msg.textContent = '正在同步……'; const ok = await Family.sync(true); msg.textContent = ok ? '同步好了。' : '没连上，等一会儿再试。'; if (ok && view === 'map') renderMap(); } }, '现在同步'),
+                h('button', { class: 'btn tiny soft', type: 'button', onclick: () => { Family.leave(); draw(); toast('这台设备不再同步了，进度还留在这台设备上'); } }, '停止同步')),
+              msgEl);
+          }
+          const input = h('input', { id: 'set-sync', type: 'text', inputmode: 'latin', autocapitalize: 'none', autocomplete: 'off', spellcheck: 'false', maxlength: '12', placeholder: '输入同步码', 'aria-label': '输入另一台设备上的同步码', value: syncTyped });
+          input.addEventListener('input', () => { syncTyped = input.value; });
+          const join = async () => {
+            msg.textContent = '正在连接……';
+            const r = await Family.join(syncTyped);
+            if (r === 'ok') { syncNote = ''; draw(); toast('连上了！两台设备的进度合在一起了'); if (view === 'map') renderMap(); return; }
+            msg.textContent = r === 'bad' ? '同步码是 8 个字母和数字，再看一下。' : r === 'none' ? '没有找到这个同步码，再看一下有没有输错。' : '没连上，检查一下网络再试。';
+          };
+          return h('div', { class: 'sync-box' },
+            h('button', { class: 'btn tiny', type: 'button', onclick: async () => { msg.textContent = '正在生成……'; const ok = await Family.create(); if (ok) { syncNote = ''; draw(); toast('同步码生成好了'); } else msg.textContent = '没连上，检查一下网络再试。'; } }, '第一台设备：生成同步码'),
+            h('div', { class: 'sync-join' }, input, h('button', { class: 'btn tiny soft', type: 'button', onclick: join }, '加入')),
+            msgEl);
+        })(), Family.code
+          ? '在另一台设备（比如妈妈的手机）上打开这个网站，「家长 → 多设备同步」里输入上面的同步码，两边的进度就合在一起：读完的故事、学会的字、生字库取两边都有的；爱心、金币、花园用最后改的那一台。每次回到小路会自动同步。同步码要像密码一样保管，知道它的人能看到、改掉这份进度。'
+          : '可可的 iPad 和妈妈的手机可以用同一份进度。在已经有进度的那台设备上点「生成同步码」，再到另一台设备上输入。'),
         row('关卡', sw('set-unlock', progress.unlockAll, (v) => {
           progress.unlockAll = v;
           save();
@@ -2950,11 +3392,14 @@
   function start(data) {
     watchHostBadge();
     syncMineStories();
-    Cloud.init(() => {
+    const adopted = () => {
       Object.entries(progress.myData).forEach(([c, d]) => addStrokeData(c, d));
       syncMineStories();
+      applySettings();
       if (view === 'map' && !introEl && !currentModal) renderMap();
-    });
+    };
+    // claude.ai 里用账号存进度；别的网站上，有同步码就和别的设备同步
+    Cloud.init(adopted).then(() => { if (!Cloud.on) Family.start(adopted); });
     loadUserPhotos().then(() => { if (view === 'map' && userPhotos.length) renderMap(); });
     renderMap();
     if (data && data.view === 'reader' && data.story != null && STORIES[data.story]) openReader(data.story, data.page || 0);
