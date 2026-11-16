@@ -15,7 +15,7 @@ export default async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: HEADERS });
   const code = (new URL(req.url).searchParams.get('code') || '').toLowerCase();
   if (!/^[a-z0-9]{8,24}$/.test(code)) return json({ error: 'bad-code' }, 400);
-  const store = getStore('family-sync');
+  const store = getStore({ name: 'family-sync', consistency: 'strong' }); // 写完马上能读到，两台设备不会互相看到旧的
   if (req.method === 'GET') {
     const saved = await store.get(code, { type: 'json' });
     return saved ? json(saved) : json({ error: 'not-found' }, 404);
