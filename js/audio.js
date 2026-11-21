@@ -160,22 +160,32 @@ window.Voice = (function () {
   }
   let useBlob = false;
   // 放在网上的录音：快要用到的先下载到内存里（prefetch），点的时候马上能放，不用等网络
-  const fetched = {};
+  const fetched = new Map();
+  const pending = new Set();
   function prefetch(texts) {
     if (DATA || device || typeof fetch !== 'function' || typeof URL === 'undefined' || !URL.createObjectURL) return;
     (texts || []).forEach((t) => {
       const e = INDEX[t];
-      if (!e || fetched[e[0]] !== undefined) return;
+      if (!e || pending.has(e[0]) || fetched.has(e[0]) || pending.size >= 16) return;
       const id = e[0];
-      fetched[id] = '';
+      pending.add(id);
       fetch(BASE + id + '.mp3')
         .then((r) => (r.ok ? r.blob() : null))
-        .then((b) => { if (b && b.size) fetched[id] = URL.createObjectURL(b); else delete fetched[id]; })
-        .catch(() => { delete fetched[id]; });
+        .then((b) => {
+          if (!b || !b.size) return;
+          fetched.set(id, URL.createObjectURL(b));
+          if (fetched.size > 64) {
+            const oldest = [...fetched.keys()].find(key => !el || fetched.get(key) !== el.src);
+            URL.revokeObjectURL(fetched.get(oldest));
+            fetched.delete(oldest);
+          }
+        })
+        .catch(() => {})
+        .finally(() => pending.delete(id));
     });
   }
   const srcOf = (id) => {
-    if (!(DATA && DATA[id])) return fetched[id] || BASE + id + '.mp3';
+    if (!(DATA && DATA[id])) return fetched.get(id) || BASE + id + '.mp3';
     return useBlob ? blobOf(id) : 'data:audio/mpeg;base64,' + DATA[id];
   };
   const fixText = (t) => FIX.reduce((s, [re, to]) => s.replace(re, to), t);

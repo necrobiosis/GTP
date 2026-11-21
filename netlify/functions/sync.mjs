@@ -17,8 +17,18 @@ export default async (req) => {
   if (!/^[a-z0-9]{8,24}$/.test(code)) return json({ error: 'bad-code' }, 400);
   const store = getStore({ name: 'family-sync', consistency: 'strong' }); // 写完马上能读到，两台设备不会互相看到旧的
   if (req.method === 'GET') {
-    const saved = await store.get(code, { type: 'json' });
-    return saved ? json(saved) : json({ error: 'not-found' }, 404);
+    const saved = await store.getWithMetadata(code, { type: 'json' });
+    if (!saved) return json({ error: 'not-found' }, 404);
+    const state = JSON.parse(saved.data.state);
+    let version = saved.etag;
+    if (Object.hasOwn(state, 'myName')) {
+      delete state.myName;
+      saved.data.state = JSON.stringify(state);
+      const cleaned = await store.setJSON(code, saved.data, { onlyIfMatch: version });
+      if (!cleaned.modified) return json({ error: 'retry' }, 409);
+      version = cleaned.etag;
+    }
+    return json({ ...saved.data, version });
   }
   if (req.method === 'PUT') {
     const text = await req.text();
@@ -26,7 +36,14 @@ export default async (req) => {
     let body;
     try { body = JSON.parse(text); } catch (e) { return json({ error: 'bad-json' }, 400); }
     if (!body || typeof body.state !== 'string' || typeof body.at !== 'number') return json({ error: 'bad-body' }, 400);
-    await store.setJSON(code, { at: body.at, state: body.state });
+    if (body.version !== null && typeof body.version !== 'string') return json({ error: 'version-required' }, 428);
+    let state;
+    try { state = JSON.parse(body.state); } catch { return json({ error: 'bad-state' }, 400); }
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return json({ error: 'bad-state' }, 400);
+    delete state.myName;
+    const condition = body.version === null ? { onlyIfNew: true } : { onlyIfMatch: body.version };
+    const result = await store.setJSON(code, { at: body.at, state: JSON.stringify(state) }, condition);
+    if (!result.modified) return json({ error: 'retry' }, 409);
     return json({ ok: true, at: body.at });
   }
   return json({ error: 'method' }, 405);

@@ -14,7 +14,7 @@ const out = resolve(process.argv[2] || join(root, 'dist', 'site'));
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
-for (const d of ['css', 'js', 'fonts', 'audio']) cpSync(join(root, d), join(out, d), { recursive: true });
+for (const d of ['css', 'js', 'fonts', 'audio', 'icons']) cpSync(join(root, d), join(out, d), { recursive: true });
 
 const html = readFileSync(join(root, 'index.html'), 'utf8').replace(/\s*<script src="media\/media\.js"><\/script>/, '');
 if (html.includes('media/')) throw new Error('index.html 里还有 media/ 的地址');
@@ -24,7 +24,7 @@ writeFileSync(join(out, 'index.html'), html);
 writeFileSync(join(out, '_headers'), '/audio/*\n  Cache-Control: public, max-age=31536000, immutable\n');
 // Netlify：网页原样发布，不用构建；多设备同步用一个小函数（netlify/functions/sync.mjs，进度存在 Netlify Blobs 里）
 cpSync(join(root, 'netlify'), join(out, 'netlify'), { recursive: true });
-writeFileSync(join(out, 'package.json'), JSON.stringify({ name: 'shizi-gushiwu-site', private: true, type: 'module', dependencies: { '@netlify/blobs': '^8.1.0' } }, null, 2) + '\n');
+writeFileSync(join(out, 'package.json'), JSON.stringify({ name: 'shizi-gushiwu-site', private: true, type: 'module', dependencies: { '@netlify/blobs': '10.0.0' } }, null, 2) + '\n');
 writeFileSync(join(out, 'netlify.toml'), '[build]\n  publish = "."\n  command = ""\n\n[functions]\n  directory = "netlify/functions"\n  node_bundler = "esbuild"\n');
 
 let files = 0;

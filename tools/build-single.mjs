@@ -26,6 +26,10 @@ const font = readFileSync(join(root, 'fonts/kidkai.woff2')).toString('base64');
 css = css.replace('url("../fonts/kidkai.woff2")', `url("data:font/woff2;base64,${font}")`);
 
 let html = read('index.html');
+for (const [file, mime] of [['story-house.svg', 'image/svg+xml'], ['apple-touch-icon.png', 'image/png']]) {
+  const data = readFileSync(join(root, 'icons', file)).toString('base64');
+  html = html.replace('icons/' + file, 'data:' + mime + ';base64,' + data);
+}
 
 // 录音：打包成一个文件时直接放进网页（window.AUDIO_DATA = { 文件名: base64 }）
 const ctx = { window: {} };

@@ -67,6 +67,7 @@
     garden: {},    // 花园：{ items: [[图, x, y], ...] } 买的装饰和摆的位置
     myName: '',    // 身边的字：孩子的全名（家长填的，只存在这台设备 / 自己的账号里）
     myChars: '',   // 身边的字：自己加的字
+    deletedStories: {},
     myStories: [], // 身边的字：自己写的故事
     myData: {},    // 自己加的字的笔顺（联网时下载的）
     unlockAll: false,
@@ -81,6 +82,7 @@
       const v = st[k];
       progress[k] = v == null ? (Array.isArray(FIELDS[k]) ? [] : typeof FIELDS[k] === 'object' ? {} : FIELDS[k]) : v;
     });
+    progress.myChars = normalizeChars(progress.myChars);
     progress.unlockAll = !!progress.unlockAll;
     Object.keys(settings).forEach((k) => delete settings[k]);
     Object.assign(settings, DEFAULTS, st.settings || {});
@@ -149,11 +151,18 @@
   const SYNC_URL = window.SYNC_URL || 'https://shizi-gushiwu.netlify.app/api/sync';
   const SYNC_KEY = 'shizi-gushiwu-sync';
   // 两边的进度合起来：读完的故事、学会的字、生字库……取并集（同一项用新的）；爱心、金币、花园用最后改的那一边
+  function normalizeChars(value) {
+    return [...new Set([...String(value || '')].filter(isHan))].join('');
+  }
+  const sharedFields = ['at', 'done', 'hearts', 'likes', 'intro', 'learned', 'taught', 'bank', 'coins', 'stationPass', 'garden', 'myChars', 'myStories', 'deletedStories', 'myData', 'unlockAll'];
+  function shared(state) {
+    return Object.fromEntries(sharedFields.filter(k => k in state).map(k => [k, state[k]]));
+  }
   function mergeState(a, b) {
     const [newer, older] = (a.at || 0) >= (b.at || 0) ? [a, b] : [b, a];
     const out = JSON.parse(JSON.stringify(newer));
     const stamp = (v) => (v && typeof v === 'object' ? Math.max(v.m || 0, v.at || 0) : typeof v === 'number' ? v : 0);
-    ['done', 'learned', 'taught', 'bank', 'stationPass', 'intro', 'myData'].forEach((k) => {
+    ['done', 'learned', 'taught', 'bank', 'stationPass', 'intro', 'myData', 'deletedStories'].forEach((k) => {
       const x = older[k] || {};
       out[k] = out[k] || {};
       Object.keys(x).forEach((id) => {
@@ -162,10 +171,10 @@
         else if (stamp(x[id]) > stamp(out[k][id])) out[k][id] = x[id];
       });
     });
-    out.myChars = [...new Set([...(out.myChars || []), ...(older.myChars || [])])];
+    out.myChars = normalizeChars(normalizeChars(out.myChars) + normalizeChars(older.myChars));
     const ids = new Set((out.myStories || []).map((s) => s.id));
     out.myStories = [...(out.myStories || []), ...(older.myStories || []).filter((s) => !ids.has(s.id))];
-    if (!out.myName && older.myName) out.myName = older.myName;
+    out.myStories = out.myStories.filter(s => !out.deletedStories[s.id]);
     return out;
   }
   const Family = (() => {
@@ -179,7 +188,7 @@
     const call = async (method, c, body) => {
       const r = await fetch(`${SYNC_URL}?code=${encodeURIComponent(c)}`, { method, headers: body ? { 'content-type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
       if (r.status === 404) return null;
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) throw Object.assign(new Error('HTTP ' + r.status), { status: r.status });
       return r.json();
     };
     const canApply = () => view === 'map' && !introEl && !currentModal;
@@ -188,31 +197,33 @@
       if (!code || busy) return false;
       busy = true;
       try {
-        const remote = await call('GET', code);
-        const local = snapshot();
-        const mine = JSON.stringify(Object.assign({}, local, { settings: null }));
-        let merged = local;
-        if (remote && remote.state) {
-          const theirs = JSON.parse(remote.state);
-          merged = mergeState(local, Object.assign(theirs, { at: remote.at || theirs.at || 0 }));
-          const next = JSON.stringify(Object.assign({}, merged, { settings: null, at: local.at }));
-          if (next !== mine) {
-            if (!force && !canApply()) { busy = false; return false; } // 正在上课、读故事：等回到小路再合
-            const keep = JSON.parse(JSON.stringify(settings)); // 声音、语速这些设置每台设备自己管
-            loadState(Object.assign(merged, { settings: keep }));
-            savedAt = Math.max(local.at || 0, remote.at || 0);
-            try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) { /* 忽略 */ }
+        const syncingCode = code;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const remote = await call('GET', syncingCode);
+          if (code !== syncingCode) return false;
+          const local = shared(snapshot());
+          const theirs = remote && shared(JSON.parse(remote.state));
+          const merged = theirs ? mergeState(local, theirs) : local;
+          if (JSON.stringify(shared(merged)) !== JSON.stringify(local)) {
+            if (!force && !canApply()) return false;
+            loadState({ ...merged, settings: { ...settings }, myName: progress.myName });
+            savedAt = merged.at;
+            try { localStorage.setItem(KEY, JSON.stringify(snapshot())); } catch (e) { /* storage unavailable */ }
             if (onChange) onChange();
           }
-        }
-        const now = snapshot();
-        if (!remote || JSON.stringify(Object.assign({}, now, { settings: null })) !== JSON.stringify(Object.assign({}, remote.state ? JSON.parse(remote.state) : {}, { settings: null }))) {
-          await call('PUT', code, { at: now.at || Date.now(), state: JSON.stringify(Object.assign({}, now, { settings: undefined })) });
+          const state = JSON.stringify(shared(snapshot()));
+          if (remote && state === remote.state) break;
+          try {
+            await call('PUT', syncingCode, { at: savedAt, state, version: remote ? remote.version : null });
+            break;
+          } catch (e) {
+            if (e.status !== 409 || attempt === 3) throw e;
+          }
         }
         lastAt = Date.now();
         lastErr = '';
       } catch (e) { lastErr = (e && e.message) || 'error'; }
-      busy = false;
+      finally { busy = false; }
       return !lastErr;
     };
     const setCode = (c) => { code = c; try { if (c) localStorage.setItem(SYNC_KEY, JSON.stringify({ code: c })); else localStorage.removeItem(SYNC_KEY); } catch (e) { /* 忽略 */ } };
@@ -1004,6 +1015,7 @@
     renderText(pg.text);
     // 这一页的字先下载好，求助时马上能听到
     if (R.self) Voice.prefetch([...new Set(hanOf(pg.text))].concat(R.page === 0 || dir === undefined ? [PHRASES.helpAsk, PHRASES.helpAskFree, PHRASES.helpPick, PHRASES.helpHint] : []));
+    if (R.self && s.pages[p + 1]) Voice.prefetch(hanOf(s.pages[p + 1].text));
     R.text.classList.remove('in-next', 'in-prev');
     void R.text.offsetWidth;
     if (dir) R.text.classList.add(dir > 0 ? 'in-next' : 'in-prev');
@@ -2445,6 +2457,7 @@
         title, text, check, status,
         h('div', { class: 'mn-btns' }, ai,
           old ? h('button', { class: 'btn soft danger', type: 'button', onclick: () => {
+            progress.deletedStories[old.id] = Date.now();
             progress.myStories = progress.myStories.filter((m) => m.id !== old.id);
             save();
             syncMineStories();
